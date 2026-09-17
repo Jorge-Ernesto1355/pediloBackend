@@ -1,5 +1,3 @@
-import { auth } from '@/libs/auth';
-import { BetterAuthProvider } from '../../infrastructure/persistence/security/BetterAuthProvider';
 import { PrismaUserRepository } from '../../infrastructure/persistence/PrismaUserRepository';
 import { prisma } from '@/libs/prisma';
 import { LoginUser } from '../../application/use-cases/LoginUser';
@@ -8,8 +6,8 @@ import { GetCurrentUser } from '../../application/use-cases/getCurrentUser';
 import { AuthController } from './AuthController';
 import { Router } from 'express';
 import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
+import { authProvider } from './auth.dependencies.js';
 
-const authProvider = new BetterAuthProvider(auth);
 const userRepository = new PrismaUserRepository(prisma);
 
 const registerUser = new RegisterUser(authProvider);

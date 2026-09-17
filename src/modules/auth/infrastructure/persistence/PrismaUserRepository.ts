@@ -23,6 +23,7 @@ export class PrismaUserRepository implements UserRepository {
     name: string;
     emailVerified: boolean;
     createdAt: Date;
+    businessId?: string | null;
   }): User {
     return User.create({
       id: row.id,
@@ -30,6 +31,7 @@ export class PrismaUserRepository implements UserRepository {
       name: row.name,
       emailVerified: row.emailVerified,
       createdAt: row.createdAt,
+      businessId: row.businessId,
     });
   }
 }

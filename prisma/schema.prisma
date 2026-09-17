@@ -18,6 +18,9 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
+  businessId String?   @unique
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
   @@unique([email])
   @@map("user")
 }
@@ -65,4 +68,276 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+enum BusinessRole {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+model Business {
+  id              String  @id @default(cuid())
+  name            String
+  slug            String  @unique
+  description     String?
+  logoUrl         String?
+  coverUrl        String?
+  ubication       String?
+  scheduleId      String?
+  ubicationMapsId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members    BusinessMember[]
+  settings   BusinessSettings?
+  menus      Menu[]
+  categories Category[]
+  products   Product[]
+  orders     Order[]
+  customers  Customer[]
+  users      User[]
+
+  businessSchedule BusinessSchedule?
+  ubicationMaps    UbicationMaps?
+}
+
+model UbicationMaps {
+  id         String  @id @default(cuid())
+  businessId String  @unique
+  latitude   Decimal @db.Decimal(10, 7)
+  longitude  Decimal @db.Decimal(10, 7)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model BusinessSettings {
+  id         String @id @default(cuid())
+  businessId String @unique
+
+  currency String  @default("MXN")
+  phone    String?
+  whatsapp String?
+  address  String?
+  timezone String  @default("America/Mazatlan")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model BusinessMember {
+  id         String       @id @default(cuid())
+  businessId String
+  userId     String
+  role       BusinessRole
+
+  createdAt DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+}
+
+model Menu {
+  id         String @id @default(cuid())
+  businessId String
+
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  categories Category[]
+}
+
+model Category {
+  id         String @id @default(cuid())
+  businessId String
+  menuId     String
+
+  name        String
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  menu     Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  products Product[]
+}
+
+model Product {
+  id         String @id @default(cuid())
+  businessId String
+  categoryId String
+
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+
+  imageUrl    String?
+  sortOrder   Int     @default(0)
+  isAvailable Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  images       ProductImage[]
+  optionGroups ProductOptionGroup[]
+  orderItems   OrderItem[]
+}
+
+model ProductImage {
+  id        String @id @default(cuid())
+  productId String
+  url       String
+  sortOrder Int    @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductOptionGroup {
+  id            String   @id @default(cuid())
+  productId     String
+  name          String
+  isRequired    Boolean  @default(false)
+  minSelections Int      @default(0) @map("minSelect")
+  maxSelections Int      @default(1) @map("maxSelect")
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options ProductOption[]
+
+  @@index([productId, sortOrder])
+}
+
+model ProductOption {
+  id            String @id @default(cuid())
+  optionGroupId String @map("groupId")
+
+  name        String
+  price       Decimal  @default(0) @db.Decimal(10, 2)
+  sortOrder   Int      @default(0)
+  isAvailable Boolean  @default(true) @map("isActive")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  optionGroup ProductOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@index([optionGroupId, sortOrder])
+}
+
+model Customer {
+  id         String @id @default(cuid())
+  businessId String
+
+  name  String?
+  phone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders   Order[]
+}
+
+model Order {
+  id         String  @id @default(cuid())
+  businessId String
+  customerId String?
+
+  orderNumber Int
+
+  status   OrderStatus
+  subtotal Decimal     @db.Decimal(10, 2)
+  total    Decimal     @db.Decimal(10, 2)
+
+  customerName  String?
+  customerPhone String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+
+  @@index([businessId, createdAt])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+
+  productName String
+  unitPrice   Decimal @db.Decimal(10, 2)
+  quantity    Int
+
+  subtotal Decimal @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  options OrderItemOption[]
+}
+
+model OrderItemOption {
+  id          String @id @default(cuid())
+  orderItemId String
+
+  name  String
+  price Decimal @db.Decimal(10, 2)
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model BusinessSchedule {
+  id         String  @id @default(cuid())
+  businessId String  @unique
+  days       Json
+  openTime   String
+  closeTime  String
+  isClosed   Boolean @default(false)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }

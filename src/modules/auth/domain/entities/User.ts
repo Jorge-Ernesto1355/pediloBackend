@@ -4,6 +4,7 @@ export interface UserProps {
   name: string;
   emailVerified: boolean;
   createdAt: Date;
+  businessId?: string | null;
 }
 
 export class User {
@@ -33,6 +34,10 @@ export class User {
     return this.props.createdAt;
   }
 
+  public getBusinessId() {
+    return this.props.businessId;
+  }
+
   toJSON() {
     return {
       id: this.props.id,
@@ -40,6 +45,7 @@ export class User {
       name: this.props.name,
       emailVerified: this.props.emailVerified,
       createdAt: this.props.createdAt,
+      businessId: this.props.businessId,
     };
   }
 }

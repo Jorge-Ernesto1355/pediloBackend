@@ -29,6 +29,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "reflect-metadata": "^0.2.2",
+    "tsyringe": "^4.10.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

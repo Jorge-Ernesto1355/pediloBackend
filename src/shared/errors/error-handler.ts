@@ -7,6 +7,7 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
 
   response.status(statusCode).json({
     error: {
+      code: error instanceof AppError ? error.code : 'INTERNAL_ERROR',
       message,
     },
   });

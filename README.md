@@ -31,4 +31,30 @@ Configura `DATABASE_URL` en `.env` con la conexión de PostgreSQL. El esquema Pr
 - `npm run format:check`: comprueba formato con Prettier.
 - `npm run prisma:generate`: genera Prisma Client.
 
+## Registro de requests
+
+La aplicación registra cada request HTTP al terminar, incluyendo método, ruta, query,
+parámetros, body, status, resultado y duración. Los campos sensibles (`password`,
+`token`, `authorization`, `cookie` y similares) se muestran como `[REDACTED]`.
+
+Para desactivarlo temporalmente:
+
+```bash
+REQUEST_LOGGING=false npm run dev
+```
+
+Ejemplo:
+
+```json
+{
+  "type": "http",
+  "method": "GET",
+  "path": "/health",
+  "route": "/health",
+  "request": { "query": {}, "params": {}, "body": {} },
+  "response": { "statusCode": 200, "result": { "status": "ok" } },
+  "durationMs": 3
+}
+```
+
 Consulta [AGENTS.md](./AGENTS.md) antes de agregar código para conservar las reglas de arquitectura.
