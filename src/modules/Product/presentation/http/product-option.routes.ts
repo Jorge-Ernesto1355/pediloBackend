@@ -51,6 +51,11 @@ productOptionRouter.post(
   controller.reorderGroupsByProduct,
 );
 productOptionRouter.get('/option-groups/:optionGroupId', requireAuth, controller.getGroupById);
+productOptionRouter.patch(
+  '/products/:productId/option-groups/:optionGroupId',
+  requireAuth,
+  controller.updateGroupByProduct,
+);
 productOptionRouter.patch('/option-groups/:optionGroupId', requireAuth, controller.updateGroupById);
 productOptionRouter.patch(
   '/option-groups/:optionGroupId/status',

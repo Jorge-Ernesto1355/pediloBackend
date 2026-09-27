@@ -3,8 +3,10 @@ export interface BusinessProps {
   name: string;
   slug: string;
   description?: string | null;
-  logoUrl?: string;
-  coverUrl?: string;
+  logoUrl?: string | null;
+  logoBlurUrl?: string | null;
+  coverUrl?: string | null;
+  coverBlurUrl?: string | null;
   ubication?: string | null;
   ubicationMaps?: BusinessCoordinates | null;
   businessSchedule?: BusinessSchedule;
@@ -53,11 +55,19 @@ export class Business {
   }
 
   public get logoUrl(): string | undefined {
-    return this.props.logoUrl;
+    return this.props.logoUrl ?? undefined;
   }
 
   public get coverUrl(): string | undefined {
-    return this.props.coverUrl;
+    return this.props.coverUrl ?? undefined;
+  }
+
+  public get logoBlurUrl(): string | undefined {
+    return this.props.logoBlurUrl ?? undefined;
+  }
+
+  public get coverBlurUrl(): string | undefined {
+    return this.props.coverBlurUrl ?? undefined;
   }
 
   public get ubication(): string | null | undefined {

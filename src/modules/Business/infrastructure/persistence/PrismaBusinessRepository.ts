@@ -1,17 +1,23 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { Business, BusinessProps, BusinessScheduleDay } from '../../domain/Entities/Business.js';
+import {
+  Business,
+  BusinessProps,
+  BusinessScheduleDay,
+} from '../../domain/Entities/Business.js';
 import {
   BusinessAlreadyExistsError,
   UserAlreadyHasBusinessError,
 } from '../../domain/errors/BusinessErrors.js';
 import {
   BusinessRepository,
+  BusinessImageAsset,
+  BusinessImageType,
   CreateBusinessRepositoryInput,
   UpdateBusinessRepositoryInput,
 } from '../../domain/ports/BusinessRepository.js';
 
 export class PrismaBusinessRepository implements BusinessRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) { }
 
   async create(input: CreateBusinessRepositoryInput): Promise<Business> {
     try {
@@ -35,15 +41,19 @@ export class PrismaBusinessRepository implements BusinessRepository {
             data: {
               businessId: business.id,
               latitude: input.ubicationMaps.latitude,
-              longitude: input.ubicationMaps.longitude,
-            },
-          });
+              longitude: input.ubicationMaps.longitude
+            }
+          })
 
           await transaction.business.update({
             where: { id: business.id },
-            data: { ubicationMapsId: ubicationMapsModel.id },
-          });
+            data: { ubicationMapsId: ubicationMapsModel.id }
+
+          })
+
+
         }
+
 
         if (input.businessSchedule) {
           const schedule = await transaction.businessSchedule.create({
@@ -122,24 +132,27 @@ export class PrismaBusinessRepository implements BusinessRepository {
         if (input.logoUrl !== undefined) data.logoUrl = input.logoUrl;
         if (input.coverUrl !== undefined) data.coverUrl = input.coverUrl;
         if (input.ubication !== undefined) data.ubication = input.ubication;
-        if (input.ubicationMaps !== undefined) {
-          data.ubicationMaps =
-            input.ubicationMaps === null
-              ? { delete: true }
-              : {
-                  upsert: {
-                    create: {
-                      latitude: input.ubicationMaps.latitude,
-                      longitude: input.ubicationMaps.longitude,
-                    },
-                    update: {
-                      latitude: input.ubicationMaps.latitude,
-                      longitude: input.ubicationMaps.longitude,
-                    },
-                  },
-                };
+        if (input.ubicationMaps === null) {
+          data.ubicationMapsId = null;
+        } else if (input.ubicationMaps !== undefined) {
+          data.ubicationMaps = {
+            upsert: {
+              create: {
+                latitude: input.ubicationMaps.latitude,
+                longitude: input.ubicationMaps.longitude,
+              },
+              update: {
+                latitude: input.ubicationMaps.latitude,
+                longitude: input.ubicationMaps.longitude,
+              },
+            },
+          };
         }
         await transaction.business.update({ where: { id }, data });
+
+        if (input.ubicationMaps === null) {
+          await transaction.ubicationMaps.deleteMany({ where: { businessId: id } });
+        }
 
         if (input.businessSchedule) {
           const scheduleData = {
@@ -168,7 +181,7 @@ export class PrismaBusinessRepository implements BusinessRepository {
 
         return transaction.business.findUniqueOrThrow({
           where: { id },
-          include: { businessSchedule: true, ubicationMaps: true },
+          include: { businessSchedule: true, ubicationMaps: true},
         });
       });
       return this.toDomain(row);
@@ -195,9 +208,43 @@ export class PrismaBusinessRepository implements BusinessRepository {
     }
   }
 
-  private toDomain(
-    row: Prisma.BusinessGetPayload<{ include: { businessSchedule: true; ubicationMaps: true } }>,
-  ): Business {
+  async getImages(id: string): Promise<BusinessImageAsset[]> {
+    const images = await this.prisma.businessImage.findMany({
+      where: { businessId: id },
+    });
+    return images.map((image) => ({
+      url: image.url,
+      publicId: image.publicId,
+      blurUrl: image.blurUrl,
+      type: image.type as BusinessImageType,
+    }));
+  }
+
+  async saveImage(id: string, image: BusinessImageAsset): Promise<void> {
+    await this.prisma.businessImage.upsert({
+      where: { businessId_type: { businessId: id, type: image.type } },
+      create: {
+        businessId: id,
+        type: image.type,
+        url: image.url,
+        publicId: image.publicId,
+        blurUrl: image.blurUrl,
+      },
+      update: {
+        url: image.url,
+        publicId: image.publicId,
+        blurUrl: image.blurUrl,
+      },
+    });
+  }
+
+  async deleteImage(id: string, type: BusinessImageType): Promise<void> {
+    await this.prisma.businessImage.deleteMany({
+      where: { businessId: id, type },
+    });
+  }
+
+  private toDomain(row: Prisma.BusinessGetPayload<{ include: { businessSchedule: true, ubicationMaps: true } }>): Business {
     const props: BusinessProps = {
       id: row.id,
       name: row.name,
@@ -208,16 +255,16 @@ export class PrismaBusinessRepository implements BusinessRepository {
       ubication: row.ubication,
       ubicationMaps: row.ubicationMaps
         ? {
-            latitude: row.ubicationMaps.latitude.toNumber(),
-            longitude: row.ubicationMaps.longitude.toNumber(),
-          }
+          latitude: row.ubicationMaps.latitude.toNumber(),
+          longitude: row.ubicationMaps.longitude.toNumber(),
+        }
         : undefined,
       businessSchedule: row.businessSchedule
         ? {
-            days: fromJsonDays(row.businessSchedule.days),
-            openTime: row.businessSchedule.openTime,
-            closeTime: row.businessSchedule.closeTime,
-          }
+          days: fromJsonDays(row.businessSchedule.days),
+          openTime: row.businessSchedule.openTime,
+          closeTime: row.businessSchedule.closeTime,
+        }
         : undefined,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -232,24 +279,22 @@ function toJsonDays(days: BusinessScheduleDay[]): Prisma.InputJsonValue {
 
 function fromJsonDays(value: Prisma.JsonValue): BusinessScheduleDay[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .filter((day) => {
-      if (typeof day !== 'object' || day === null || Array.isArray(day)) return false;
-      const candidate = day as Record<string, Prisma.JsonValue>;
-      return (
-        typeof candidate.key === 'string' &&
-        typeof candidate.label === 'string' &&
-        typeof candidate.enabled === 'boolean'
-      );
-    })
-    .map((day) => {
-      const candidate = day as Record<string, Prisma.JsonValue>;
-      return {
-        key: candidate.key as string,
-        label: candidate.label as string,
-        enabled: candidate.enabled as boolean,
-      };
-    });
+  return value.filter((day) => {
+    if (typeof day !== 'object' || day === null || Array.isArray(day)) return false;
+    const candidate = day as Record<string, Prisma.JsonValue>;
+    return (
+      typeof candidate.key === 'string' &&
+      typeof candidate.label === 'string' &&
+      typeof candidate.enabled === 'boolean'
+    );
+  }).map((day) => {
+    const candidate = day as Record<string, Prisma.JsonValue>;
+    return {
+      key: candidate.key as string,
+      label: candidate.label as string,
+      enabled: candidate.enabled as boolean,
+    };
+  });
 }
 
 function isUniqueError(error: unknown): error is Prisma.PrismaClientKnownRequestError {

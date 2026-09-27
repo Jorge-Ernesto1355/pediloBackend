@@ -5,7 +5,10 @@ export const registerSchema = z.object({
 
   email: z.string().email('Email inválido'),
 
-  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  password: z
+    .string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres')
+    .max(64, 'La contraseña no puede tener más de 64 caracteres'),
 });
 export const loginSchema = z.object({
   email: z.string().email('Email inválido'),

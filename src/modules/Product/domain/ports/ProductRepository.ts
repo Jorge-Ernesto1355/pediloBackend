@@ -8,6 +8,9 @@ export interface CreateProductRepositoryInput {
   description?: string | null;
   price: number;
   imageUrl?: string | null;
+  imageBlurUrl?: string | null;
+  imagePublicId?: string | null;
+  isAvailable?: boolean;
 }
 
 export interface ProductListFilters {
@@ -21,6 +24,9 @@ export interface UpdateProductRepositoryInput {
   description?: string | null;
   price?: number;
   imageUrl?: string | null;
+  imageBlurUrl?: string | null;
+  imagePublicId?: string | null;
+  categoryId?: string;
   isAvailable?: boolean;
   sortOrder?: number;
 }
@@ -29,6 +35,12 @@ export interface ProductRepository {
   create(input: CreateProductRepositoryInput): Promise<Product>;
   getById(ownerUserId: string, productId: string): Promise<Product | null>;
   list(ownerUserId: string, filters: ProductListFilters): Promise<Product[]>;
+  getImage?: (ownerUserId: string, productId: string) => Promise<{ publicId: string } | null>;
+  saveImage?: (
+    ownerUserId: string,
+    productId: string,
+    image: { url: string; publicId: string; blurUrl: string },
+  ) => Promise<void>;
   update(
     ownerUserId: string,
     productId: string,

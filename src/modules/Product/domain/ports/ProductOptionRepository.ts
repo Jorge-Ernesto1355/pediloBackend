@@ -22,6 +22,7 @@ export interface UpdateOptionGroupRepositoryInput {
   isRequired?: boolean;
   minSelections?: number;
   maxSelections?: number;
+  isActive?: boolean;
 }
 
 export interface UpdateOptionRepositoryInput {

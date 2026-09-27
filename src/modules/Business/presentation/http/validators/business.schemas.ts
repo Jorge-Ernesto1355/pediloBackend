@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
-const optionalUrl = z.string().url().optional();
-const nullableUrl = z.string().url().nullable().optional();
+export const businessImageTypeSchema = z.enum(['logo', 'cover']);
 
 const businessScheduleDaySchema = z.object({
   key: z.string().trim().min(1),
@@ -35,10 +34,6 @@ export const createBusinessSchema = z
 
     description: z.string().trim().max(300).optional(),
 
-    logoUrl: optionalUrl,
-
-    coverUrl: optionalUrl,
-
     ubication: z.string().trim().max(255).optional(),
 
     ubicationMaps: ubicationMapsSchema,
@@ -61,18 +56,13 @@ export const updateBusinessSchema = z
 
     description: z.string().trim().max(300).nullable().optional(),
 
-    logoUrl: nullableUrl,
-
-    coverUrl: nullableUrl,
-
     ubication: z.string().trim().max(255).nullable().optional(),
 
     ubicationMaps: ubicationMapsSchema,
 
     businessSchedule: businessScheduleSchema.optional(),
   })
-  .strict()
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required');
+  .strict();
 
 export const businessIdSchema = z.object({ id: z.string().min(1) });
 export const businessSlugSchema = z.object({ slug: z.string().min(1) });

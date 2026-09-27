@@ -8,15 +8,17 @@ datasource db {
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean
-  image         String?
-  createdAt     DateTime
-  updatedAt     DateTime
-  sessions      Session[]
-  accounts      Account[]
+  id                      String                   @id
+  name                    String
+  email                   String
+  emailVerified           Boolean
+  image                   String?
+  createdAt               DateTime
+  updatedAt               DateTime
+  sessions                Session[]
+  accounts                Account[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   businessId String?   @unique
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -70,6 +72,36 @@ model Verification {
   @@map("verification")
 }
 
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_token")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_token")
+}
+
 enum BusinessRole {
   OWNER
   ADMIN
@@ -82,7 +114,9 @@ model Business {
   slug            String  @unique
   description     String?
   logoUrl         String?
+  logoBlurUrl     String?
   coverUrl        String?
+  coverBlurUrl    String?
   ubication       String?
   scheduleId      String?
   ubicationMapsId String?
@@ -98,9 +132,30 @@ model Business {
   orders     Order[]
   customers  Customer[]
   users      User[]
+  images     BusinessImage[]
 
   businessSchedule BusinessSchedule?
   ubicationMaps    UbicationMaps?
+}
+
+enum BusinessImageType {
+  LOGO
+  COVER
+}
+
+model BusinessImage {
+  id         String            @id @default(cuid())
+  businessId String
+  type       BusinessImageType
+  url        String
+  publicId   String
+  blurUrl    String
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, type])
 }
 
 model UbicationMaps {
@@ -184,9 +239,11 @@ model Product {
   description String?
   price       Decimal @db.Decimal(10, 2)
 
-  imageUrl    String?
-  sortOrder   Int     @default(0)
-  isAvailable Boolean @default(true)
+  imageUrl      String?
+  imageBlurUrl  String?
+  imagePublicId String?
+  sortOrder     Int     @default(0)
+  isAvailable   Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -197,6 +254,9 @@ model Product {
   images       ProductImage[]
   optionGroups ProductOptionGroup[]
   orderItems   OrderItem[]
+
+  @@index([businessId, isAvailable, createdAt])
+  @@index([businessId, categoryId])
 }
 
 model ProductImage {
@@ -247,13 +307,15 @@ model Customer {
   businessId String
 
   name  String?
-  phone String?
+  phone String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   orders   Order[]
+
+  @@unique([businessId, phone])
 }
 
 model Order {
@@ -281,7 +343,9 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
 
+  @@unique([businessId, orderNumber])
   @@index([businessId, createdAt])
+  @@index([businessId, status, createdAt])
 }
 
 enum OrderStatus {
@@ -308,6 +372,8 @@ model OrderItem {
   product Product @relation(fields: [productId], references: [id])
 
   options OrderItemOption[]
+
+  @@index([productId])
 }
 
 model OrderItemOption {

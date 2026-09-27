@@ -32,6 +32,14 @@ export class ProductNotFoundError extends ProductError {
   }
 }
 
+export class ProductHasOrdersError extends ProductError {
+  readonly httpStatus = 409;
+  readonly code = 'PRODUCT_HAS_ORDERS';
+  constructor() {
+    super('Product cannot be deleted because it has order history');
+  }
+}
+
 export class ProductTargetCategoryNotFoundError extends ProductError {
   readonly httpStatus = 404;
   readonly code = 'TARGET_CATEGORY_NOT_FOUND';

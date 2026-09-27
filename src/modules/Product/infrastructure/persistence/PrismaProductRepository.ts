@@ -9,6 +9,7 @@ import {
   InvalidProductOrderError,
   ProductAccessDeniedError,
   ProductBusinessNotFoundError,
+  ProductHasOrdersError,
   ProductNotFoundError,
   ProductSameCategoryError,
   ProductTargetCategoryNotFoundError,
@@ -19,15 +20,25 @@ import {
   ProductRepository,
   UpdateProductRepositoryInput,
 } from '../../domain/ports/ProductRepository.js';
+import {
+  BestSellingProduct,
+  MostRequestedProduct,
+  ProductAnalyticsFilter,
+  ProductManagementFilters,
+  ProductManagementRepository,
+  ProductStatistics,
+} from '../../application/ports/ProductManagementRepository.js';
 
 const productSelect = {
   id: true,
   businessId: true,
   categoryId: true,
+  category: { select: { id: true, name: true, description: true, menuId: true } },
   name: true,
   description: true,
   price: true,
   imageUrl: true,
+  imageBlurUrl: true,
   sortOrder: true,
   isAvailable: true,
   createdAt: true,
@@ -62,7 +73,7 @@ const productSelect = {
   },
 } as const;
 
-export class PrismaProductRepository implements ProductRepository {
+export class PrismaProductRepository implements ProductRepository, ProductManagementRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async create(input: CreateProductRepositoryInput): Promise<Product> {
@@ -82,6 +93,9 @@ export class PrismaProductRepository implements ProductRepository {
           description: input.description,
           price: input.price,
           imageUrl: input.imageUrl,
+          imageBlurUrl: input.imageBlurUrl,
+          imagePublicId: input.imagePublicId,
+          isAvailable: input.isAvailable ?? true,
           sortOrder: (aggregate._max.sortOrder ?? -1) + 1,
         },
         select: productSelect,
@@ -91,8 +105,14 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   async getById(ownerUserId: string, productId: string): Promise<Product | null> {
-    const row = await this.prisma.product.findFirst({
-      where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { businessId: true },
+    });
+    if (!product) return null;
+    await this.assertBusinessAccess(ownerUserId, product.businessId);
+    const row = await this.prisma.product.findUnique({
+      where: { id: productId },
       select: productSelect,
     });
     return row ? toDomain(row) : null;
@@ -114,6 +134,124 @@ export class PrismaProductRepository implements ProductRepository {
     return rows.map(toDomain);
   }
 
+  async listAdmin(
+    ownerUserId: string,
+    filters: ProductManagementFilters,
+  ): Promise<{ products: Product[]; total: number }> {
+    await this.assertBusinessAccess(ownerUserId, filters.businessId);
+    const where = buildProductWhere(filters);
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        orderBy: { [filters.sortBy]: filters.sortOrder },
+        skip: (filters.page - 1) * filters.limit,
+        take: filters.limit,
+        select: productSelect,
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+    return { products: rows.map(toDomain), total };
+  }
+
+  async stats(ownerUserId: string, businessId: string): Promise<ProductStatistics> {
+    await this.assertBusinessAccess(ownerUserId, businessId);
+    const [totalProducts, activeProducts, inactiveProducts, categories] =
+      await this.prisma.$transaction([
+        this.prisma.product.count({ where: { businessId } }),
+        this.prisma.product.count({ where: { businessId, isAvailable: true } }),
+        this.prisma.product.count({ where: { businessId, isAvailable: false } }),
+        this.prisma.product.groupBy({
+          by: ['categoryId'],
+          where: { businessId },
+          orderBy: { categoryId: 'asc' },
+          _count: { _all: true },
+        }),
+      ]);
+    return {
+      totalProducts,
+      activeProducts,
+      inactiveProducts,
+      productsWithoutCategory: 0,
+      categoriesWithProducts: categories.length,
+    };
+  }
+
+  async bestSelling(
+    ownerUserId: string,
+    filters: ProductAnalyticsFilter,
+  ): Promise<BestSellingProduct[]> {
+    await this.assertBusinessAccess(ownerUserId, filters.businessId);
+    const rows = await this.analyticsRows(filters);
+    return rows.map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      quantitySold: row.quantity,
+      ordersCount: row.ordersCount,
+      revenue: row.revenue,
+    }));
+  }
+
+  async mostRequested(
+    ownerUserId: string,
+    filters: ProductAnalyticsFilter,
+  ): Promise<MostRequestedProduct[]> {
+    await this.assertBusinessAccess(ownerUserId, filters.businessId);
+    const rows = await this.analyticsRows(filters);
+    return rows.map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      ordersCount: row.ordersCount,
+      quantityRequested: row.quantity,
+    }));
+  }
+
+  private async analyticsRows(filters: ProductAnalyticsFilter): Promise<AnalyticsRow[]> {
+    const conditions = [
+      Prisma.sql`o."businessId" = ${filters.businessId}`,
+      Prisma.sql`o."status" IN ('CONFIRMED', 'PREPARING', 'READY', 'COMPLETED')`,
+    ];
+    if (filters.from) conditions.push(Prisma.sql`o."createdAt" >= ${startOfDay(filters.from)}`);
+    if (filters.to) conditions.push(Prisma.sql`o."createdAt" <= ${endOfDay(filters.to)}`);
+    if (filters.categoryId) conditions.push(Prisma.sql`p."categoryId" = ${filters.categoryId}`);
+    const where = Prisma.join(conditions, ' AND ');
+    return this.prisma.$queryRaw<AnalyticsRow[]>(Prisma.sql`
+      SELECT
+        oi."productId" AS "productId",
+        MAX(oi."productName") AS "name",
+        COALESCE(SUM(oi."quantity"), 0)::int AS "quantity",
+        COUNT(DISTINCT oi."orderId")::int AS "ordersCount",
+        COALESCE(SUM(oi."subtotal"), 0)::float8 AS "revenue"
+      FROM "OrderItem" oi
+      INNER JOIN "Order" o ON o."id" = oi."orderId"
+      INNER JOIN "Product" p ON p."id" = oi."productId"
+      WHERE ${where}
+      GROUP BY oi."productId"
+      ORDER BY "quantity" DESC, "ordersCount" DESC, "productId" ASC
+      LIMIT ${filters.limit}
+    `);
+  }
+
+  async getImage(ownerUserId: string, productId: string): Promise<{ publicId: string } | null> {
+    return this.prisma.product
+      .findFirst({
+        where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
+        select: { imagePublicId: true },
+      })
+      .then((row) => (row?.imagePublicId ? { publicId: row.imagePublicId } : null));
+  }
+
+  async saveImage(
+    ownerUserId: string,
+    productId: string,
+    image: { url: string; publicId: string; blurUrl: string },
+  ): Promise<void> {
+    const result = await this.prisma.product.updateMany({
+      where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
+      data: { imageUrl: image.url, imageBlurUrl: image.blurUrl, imagePublicId: image.publicId },
+    });
+    if (result.count === 0) throw new ProductNotFoundError();
+  }
+
   async update(
     ownerUserId: string,
     productId: string,
@@ -122,11 +260,14 @@ export class PrismaProductRepository implements ProductRepository {
     return this.prisma.$transaction(async (transaction) => {
       const existing = await transaction.product.findFirst({
         where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
-        select: { id: true, categoryId: true },
+        select: { id: true, businessId: true, categoryId: true },
       });
       if (!existing) return null;
 
       const { sortOrder, ...fields } = input;
+      if (input.categoryId !== undefined) {
+        await this.assertCategory(input.categoryId, existing.businessId);
+      }
       if (sortOrder === undefined) {
         const row = await transaction.product.update({
           where: { id: productId },
@@ -161,9 +302,12 @@ export class PrismaProductRepository implements ProductRepository {
     return this.prisma.$transaction(async (transaction) => {
       const product = await transaction.product.findFirst({
         where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
-        select: { id: true, categoryId: true },
+        select: { id: true, categoryId: true, businessId: true },
       });
       if (!product) return false;
+      await this.assertBusinessAccess(ownerUserId, product.businessId);
+      const orderItems = await transaction.orderItem.count({ where: { productId: product.id } });
+      if (orderItems > 0) throw new ProductHasOrdersError();
       await transaction.product.delete({ where: { id: product.id } });
       await normalizeCategoryOrder(transaction, product.categoryId);
       return true;
@@ -264,6 +408,11 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   private async assertBusinessAccess(ownerUserId: string, businessId: string): Promise<void> {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true },
+    });
+    if (!business) throw new ProductBusinessNotFoundError();
     const user = await this.prisma.user.findUnique({
       where: { id: ownerUserId },
       select: { businessId: true },
@@ -279,6 +428,51 @@ export class PrismaProductRepository implements ProductRepository {
     });
     if (!category) throw new ProductTargetCategoryNotFoundError();
   }
+}
+
+interface AnalyticsRow {
+  productId: string;
+  name: string;
+  quantity: number;
+  ordersCount: number;
+  revenue: number;
+}
+
+function buildProductWhere(filters: ProductManagementFilters): Prisma.ProductWhereInput {
+  return {
+    businessId: filters.businessId,
+    ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+    ...(filters.isAvailable === undefined ? {} : { isAvailable: filters.isAvailable }),
+    ...(filters.search ? { name: { contains: filters.search, mode: 'insensitive' } } : {}),
+    ...(filters.createdFrom || filters.createdTo
+      ? {
+          createdAt: {
+            ...(filters.createdFrom ? { gte: startOfDay(filters.createdFrom) } : {}),
+            ...(filters.createdTo ? { lte: endOfDay(filters.createdTo) } : {}),
+          },
+        }
+      : {}),
+    ...(filters.updatedFrom || filters.updatedTo
+      ? {
+          updatedAt: {
+            ...(filters.updatedFrom ? { gte: startOfDay(filters.updatedFrom) } : {}),
+            ...(filters.updatedTo ? { lte: endOfDay(filters.updatedTo) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function startOfDay(value: Date): Date {
+  const result = new Date(value);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function endOfDay(value: Date): Date {
+  const result = new Date(value);
+  result.setHours(23, 59, 59, 999);
+  return result;
 }
 
 async function normalizeCategoryOrder(
@@ -299,10 +493,17 @@ function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }
     id: row.id,
     businessId: row.businessId,
     categoryId: row.categoryId,
+    category: {
+      id: row.category.id,
+      name: row.category.name,
+      description: row.category.description,
+      menuId: row.category.menuId,
+    },
     name: row.name,
     description: row.description,
     price: row.price.toNumber(),
     imageUrl: row.imageUrl,
+    imageBlurUrl: row.imageBlurUrl,
     sortOrder: row.sortOrder,
     isAvailable: row.isAvailable,
     createdAt: row.createdAt,

@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 export const productIdSchema = z.object({ productId: z.string().trim().min(1) });
 export const optionGroupIdSchema = z.object({ optionGroupId: z.string().trim().min(1) });
+export const productOptionGroupParamsSchema = z.object({
+  productId: z.string().trim().min(1),
+  optionGroupId: z.string().trim().min(1),
+});
 export const optionIdSchema = z.object({ optionId: z.string().trim().min(1) });
 
 const optionPriceSchema = z
@@ -40,6 +44,7 @@ export const updateOptionGroupSchema = z
     isRequired: z.boolean().optional(),
     minSelections: z.number().int().min(0).max(100).optional(),
     maxSelections: z.number().int().min(0).max(100).optional(),
+    isActive: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required');

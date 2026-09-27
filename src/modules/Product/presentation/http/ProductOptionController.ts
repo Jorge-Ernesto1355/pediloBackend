@@ -22,6 +22,7 @@ import {
   optionIdSchema,
   optionStatusSchema,
   productIdSchema,
+  productOptionGroupParamsSchema,
   reorderGroupSchema,
   reorderOptionSchema,
   updateOptionGroupSchema,
@@ -82,6 +83,17 @@ export class ProductOptionController {
     if (!body.success) return badRequest(response, body.error);
     return this.updateGroup
       .execute(request.user!.id, params.data.optionGroupId, body.data)
+      .then((group) => response.json({ optionGroup: group }))
+      .catch((error) => this.handleError(response, error));
+  };
+
+  updateGroupByProduct = (request: Request, response: Response) => {
+    const params = productOptionGroupParamsSchema.safeParse(request.params);
+    const body = updateOptionGroupSchema.safeParse(request.body);
+    if (!params.success) return badRequest(response, params.error);
+    if (!body.success) return badRequest(response, body.error);
+    return this.updateGroup
+      .execute(request.user!.id, params.data.optionGroupId, body.data, params.data.productId)
       .then((group) => response.json({ optionGroup: group }))
       .catch((error) => this.handleError(response, error));
   };

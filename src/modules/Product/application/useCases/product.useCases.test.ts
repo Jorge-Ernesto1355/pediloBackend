@@ -39,6 +39,8 @@ function repository(): ProductRepository {
     setAvailable: vi.fn().mockResolvedValue(product),
     moveToCategory: vi.fn().mockResolvedValue(product),
     reorder: vi.fn().mockResolvedValue([product]),
+    getImage: vi.fn().mockResolvedValue(null),
+    saveImage: vi.fn(),
   };
 }
 

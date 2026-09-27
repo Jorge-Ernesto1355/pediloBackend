@@ -1,4 +1,10 @@
 import { Business, BusinessProps } from '../Entities/Business.js';
+import { BusinessImageType, UploadedImage } from '../Entities/BusinessImage.js';
+export { BusinessImageType } from '../Entities/BusinessImage.js';
+
+export interface BusinessImageAsset extends UploadedImage {
+  type: BusinessImageType;
+}
 
 export interface BusinessRepository {
   create(input: CreateBusinessRepositoryInput): Promise<Business>;
@@ -8,6 +14,9 @@ export interface BusinessRepository {
   list(skip: number, take: number): Promise<Business[]>;
   update(id: string, input: UpdateBusinessRepositoryInput): Promise<Business | null>;
   delete(id: string): Promise<boolean>;
+  getImages(id: string): Promise<BusinessImageAsset[]>;
+  saveImage(id: string, image: BusinessImageAsset): Promise<void>;
+  deleteImage(id: string, type: BusinessImageType): Promise<void>;
 }
 
 export interface CreateBusinessRepositoryInput extends Omit<

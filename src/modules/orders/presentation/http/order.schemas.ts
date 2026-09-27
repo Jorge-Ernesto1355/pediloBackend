@@ -1,0 +1,32 @@
+import { z } from 'zod';
+import { phoneSchema } from '@/shared/validation/phone.js';
+export const orderIdSchema = z.object({ orderId: z.string().trim().min(1) });
+export const businessIdSchema = z.object({ businessId: z.string().trim().min(1) });
+const itemSchema = z
+  .object({
+    productId: z.string().trim().min(1),
+    quantity: z.number().int().min(1).max(100),
+    optionIds: z.array(z.string().trim().min(1)).max(50).optional(),
+  })
+  .strict();
+export const createOrderSchema = z
+  .object({
+    customer: z.object({ name: z.string().trim().min(1).max(120), phone: phoneSchema }).strict(),
+    items: z.array(itemSchema).min(1).max(100),
+    notes: z.string().trim().max(1000).nullable().optional(),
+  })
+  .strict();
+export const orderStatusSchema = z
+  .object({
+    status: z.enum(['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']),
+  })
+  .strict();
+export const orderListSchema = z
+  .object({
+    status: z
+      .enum(['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'])
+      .optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();

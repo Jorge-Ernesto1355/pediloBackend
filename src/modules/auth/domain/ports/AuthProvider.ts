@@ -24,4 +24,5 @@ export interface AuthProvider extends AuthSessionReader {
   signIn(input: SignInInput): Promise<AuthSessionResult>;
   getSession(headers: Headers): Promise<User | null>;
   signOut(headers: Headers): Promise<void>;
+  changePassword(headers: Headers, currentPassword: string, newPassword: string): Promise<string[]>;
 }

@@ -10,9 +10,12 @@ export class UpdateOptionGroup {
     ownerUserId: string,
     groupId: string,
     dto: UpdateOptionGroupDTO,
+    productId?: string,
   ): Promise<ProductOptionGroupProps> {
     const current = await this.repository.getGroup(ownerUserId, groupId);
     if (!current) throw new OptionGroupNotFoundError();
+    if (productId !== undefined && current.productId !== productId)
+      throw new OptionGroupNotFoundError();
     assertOptionGroupConfiguration({
       isRequired: dto.isRequired ?? current.isRequired,
       minSelections: dto.minSelections ?? current.minSelections,

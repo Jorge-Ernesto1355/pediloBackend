@@ -33,11 +33,13 @@ export interface ProductProps {
   description: string | null;
   price: number;
   imageUrl: string | null;
+  imageBlurUrl?: string | null;
   sortOrder: number;
   isAvailable: boolean;
   createdAt: Date;
   updatedAt: Date;
   optionGroups?: ProductOptionGroupProps[];
+  category?: { id: string; name: string; description: string | null; menuId: string };
 }
 
 export class Product {

@@ -94,6 +94,7 @@ describe('product option use cases', () => {
   it('updates status, metadata and options through their dedicated operations', async () => {
     const repo = repository();
     await new UpdateOptionGroup(repo).execute('user-1', 'group-1', { name: 'Extras fríos' });
+    await new UpdateOptionGroup(repo).execute('user-1', 'group-1', { isActive: false });
     await new SetOptionGroupActive(repo).execute('user-1', 'group-1', false);
     await new CreateOption(repo).execute('user-1', 'group-1', { name: 'Aguacate', price: 20 });
     await new UpdateOption(repo).execute('user-1', 'option-1', { price: 18 });

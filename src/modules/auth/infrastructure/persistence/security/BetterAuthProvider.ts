@@ -10,6 +10,10 @@ import { APIError } from 'better-auth';
 import { EmailAlreadyExistsError } from '../../../domain/errors/EmailAlreadyInUseError';
 import { InvalidCredentialsError } from '@/modules/auth/domain/errors/InvalidCredentialsError';
 import { UnexpectedAuthError } from '@/modules/auth/domain/errors/UnexpectedAuthError';
+import {
+  CurrentPasswordIncorrectError,
+  PasswordRequirementsError,
+} from '@/modules/auth/domain/errors/AccountErrors.js';
 
 type BetterAuthUser = {
   id: string;
@@ -50,8 +54,6 @@ export class BetterAuthProvider implements AuthProvider {
       if (!response.ok) {
         const body = await response.clone().json();
 
-        console.log('error', body);
-
         throw new APIError(
           'UNAUTHORIZED',
           body.code ?? 'INVALID_EMAIL_OR_PASSWORD',
@@ -73,6 +75,43 @@ export class BetterAuthProvider implements AuthProvider {
 
   async signOut(headers: Headers): Promise<void> {
     await this.auth.api.signOut({ headers });
+  }
+
+  async changePassword(
+    headers: Headers,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<string[]> {
+    try {
+      const response = await this.auth.api.changePassword({
+        body: { currentPassword, newPassword, revokeOtherSessions: true },
+        headers,
+        asResponse: true,
+      });
+      if (!response.ok) {
+        const body = (await response.clone().json()) as { code?: string; message?: string };
+        if (body.code === 'INVALID_PASSWORD') throw new CurrentPasswordIncorrectError();
+        if (body.code === 'PASSWORD_TOO_SHORT' || body.code === 'PASSWORD_TOO_LONG') {
+          throw new PasswordRequirementsError();
+        }
+        throw new UnexpectedAuthError(body.message ?? 'Password change failed');
+      }
+      return typeof response.headers.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : [response.headers.get('set-cookie')].filter((value): value is string => Boolean(value));
+    } catch (error) {
+      if (error instanceof APIError) {
+        const code =
+          typeof error.body === 'string'
+            ? error.body
+            : (error.body as { code?: string } | undefined)?.code;
+        if (code === 'INVALID_PASSWORD') throw new CurrentPasswordIncorrectError();
+        if (code === 'PASSWORD_TOO_SHORT' || code === 'PASSWORD_TOO_LONG') {
+          throw new PasswordRequirementsError();
+        }
+      }
+      throw error;
+    }
   }
 
   private async toSessionResult(response: Response): Promise<AuthSessionResult> {

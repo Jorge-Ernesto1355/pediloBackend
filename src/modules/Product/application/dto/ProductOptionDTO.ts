@@ -18,6 +18,7 @@ export interface UpdateOptionGroupDTO {
   isRequired?: boolean;
   minSelections?: number;
   maxSelections?: number;
+  isActive?: boolean;
 }
 
 export interface UpdateOptionDTO {
