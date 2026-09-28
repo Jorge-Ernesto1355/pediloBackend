@@ -25,7 +25,7 @@ export const auth = betterAuth({
     revokeSessionsOnPasswordReset: true,
   },
   secret: process.env.BETTER_AUTH_SECRET,
-  baseUrl: process.env.BETTER_AUTH_BASE_URL || 'http://api.pedilo.mx',
+  baseUrl: process.env.BETTER_AUTH_BASE_URL || 'https://api.pedilo.mx',
   trustedOrigins: (process.env.TRUSTED_ORIGINS ?? '')
     .split(',')
     .map((o) => o.trim())
