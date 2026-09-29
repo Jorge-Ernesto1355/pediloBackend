@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express';
 
-const SENSITIVE_KEY = /password|token|secret|authorization|cookie|api[-_]?key/i;
+const SENSITIVE_KEY =
+  /password|token|secret|authorization|cookie|api[-_]?key|email|phone|address|customer|name/i;
 const MAX_VALUE_LENGTH = 2_000;
 
 function sanitize(value: unknown, key?: string): unknown {
@@ -35,29 +36,29 @@ function logRequest(
   startedAt: number,
   body: unknown,
 ) {
+  const includePayloads = process.env.NODE_ENV !== 'production';
   const entry = {
     type: 'http',
     method: request.method,
     path: request.originalUrl,
     route: request.route?.path ?? null,
-    request: {
-      query: sanitize(request.query),
-      params: sanitize(request.params),
-      body: sanitize(request.body),
-    },
+    request: includePayloads
+      ? {
+          query: sanitize(request.query),
+          params: sanitize(request.params),
+          body: sanitize(request.body),
+        }
+      : undefined,
     response: {
       statusCode: response.statusCode,
-      result: sanitize(responseBodyFrom(body)),
+      ...(includePayloads ? { result: sanitize(responseBodyFrom(body)) } : {}),
     },
     durationMs: Date.now() - startedAt,
     ...(response.locals.requestLoggerError
       ? {
           error:
             response.locals.requestLoggerError instanceof Error
-              ? {
-                  name: response.locals.requestLoggerError.name,
-                  message: response.locals.requestLoggerError.message,
-                }
+              ? { name: response.locals.requestLoggerError.name }
               : sanitize(response.locals.requestLoggerError),
         }
       : {}),

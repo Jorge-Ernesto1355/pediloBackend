@@ -5,7 +5,9 @@ import { Resend } from 'resend';
 export class ResendEmailService implements EmailService {
   async send(message: EmailMessage): Promise<void> {
     if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
-      throw new Error('Email delivery is not configured: RESEND_API_KEY and EMAIL_FROM are required');
+      throw new Error(
+        'Email delivery is not configured: RESEND_API_KEY and EMAIL_FROM are required',
+      );
     }
 
     const resend = new Resend(env.RESEND_API_KEY);
@@ -18,7 +20,7 @@ export class ResendEmailService implements EmailService {
     });
 
     if (error) {
-      throw new Error(`Resend rejected the email: ${error.message}`);
+      throw new Error('Email delivery failed');
     }
   }
 }

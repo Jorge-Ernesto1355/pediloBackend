@@ -67,7 +67,8 @@ export class AccountController {
     }
     return response.status(200).json({
       success: true,
-      message: result === 'already-verified' ? 'Email already verified' : 'Email verified successfully',
+      message:
+        result === 'already-verified' ? 'Email already verified' : 'Email verified successfully',
     });
   };
 
@@ -102,8 +103,6 @@ export class AccountController {
   }
 
   private handleError(response: Response, error: unknown) {
-
-    console.log(error)
     if (error instanceof AuthDomainError) {
       return response.status(error.httpStatus).json({ success: false, message: error.message });
     }

@@ -18,12 +18,9 @@ export class PasswordRecoveryController {
 
     try {
       await this.recovery.requestReset(parsed.data.email);
-    } catch (error) {
+    } catch {
       // Do not expose account existence or token/email-provider details.
-      console.error(
-        '[password-recovery] request failed:',
-        error instanceof Error ? error.message : error,
-      );
+      console.error('[password-recovery] request failed');
     }
     return response.status(200).json({ success: true, message: GENERIC_FORGOT_PASSWORD_MESSAGE });
   };

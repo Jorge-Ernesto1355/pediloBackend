@@ -19,20 +19,29 @@ import { salesRouter } from './modules/dashboard/presentation/http/sales.routes.
 import { businessSettingsRouter } from './modules/Business/presentation/http/business-settings.routes.js';
 import { artificialDelay } from './libs/ArtificialDelays';
 import { accountRouter } from './modules/Account/presentation/http/account.routes.js';
+import { trustedOrigins } from './shared/config/env.js';
+import { trustedOriginGuard } from './shared/config/security/origin-guard.js';
+import { PasswordRecoveryRateLimiter } from './modules/auth/presentation/http/passwordRecoveryRateLimiter.js';
 export function createApp() {
   const app = express();
+  const betterAuthRateLimiter = new PasswordRecoveryRateLimiter();
 
   app.use(requestLogger);
 
   app.use(
     cors({
-      origin: (process.env.TRUSTED_ORIGINS ?? '').split(',').filter(Boolean),
+      origin: trustedOrigins,
       credentials: true,
     }),
   );
   app.use(helmet());
+  app.use(trustedOriginGuard);
 
   // Handler crudo de better-auth. Debe ir ANTES de express.json().
+  app.use(
+    '/api/auth',
+    betterAuthRateLimiter.middleware(60, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),
+  );
   app.all('/api/auth/*', toNodeHandler(auth));
 
   app.use('/api/v1', artificialDelay);

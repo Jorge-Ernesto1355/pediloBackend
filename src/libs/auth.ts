@@ -2,21 +2,23 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { hashPassword, verifyPassword } from 'better-auth/crypto';
 import { prisma } from './prisma';
+import { authBaseUrl, env, trustedOrigins } from '@/shared/config/env.js';
 
-if (!process.env.BETTER_AUTH_SECRET) {
-  throw new Error('BETTER_AUTH_SECRET is not defined');
-}
+const socialProviders =
+  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+    ? {
+        google: {
+          clientId: env.GOOGLE_CLIENT_ID,
+          clientSecret: env.GOOGLE_CLIENT_SECRET,
+        },
+      }
+    : undefined;
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: 'postgresql',
   }),
-  socialProviders: {
-    google: {
-       clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!, 
-    }
-  },
+  socialProviders,
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
@@ -24,10 +26,13 @@ export const auth = betterAuth({
     password: { hash: hashPassword, verify: verifyPassword },
     revokeSessionsOnPasswordReset: true,
   },
-  secret: process.env.BETTER_AUTH_SECRET,
-  baseUrl: process.env.BETTER_AUTH_BASE_URL || 'https://api.pedilo.mx',
-  trustedOrigins: (process.env.TRUSTED_ORIGINS ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean),
+  secret: env.BETTER_AUTH_SECRET,
+  baseURL: authBaseUrl,
+  trustedOrigins,
+  useSecureCookies: env.NODE_ENV === 'production',
+  defaultCookieAttributes: {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  },
 });

@@ -148,11 +148,9 @@ export class BetterAuthProvider implements AuthProvider {
         return new InvalidCredentialsError();
       }
 
-      return new UnexpectedAuthError('An unexpected error occurred during authentication');
+      return new UnexpectedAuthError('Authentication request failed');
     }
 
-    return new UnexpectedAuthError(
-      error instanceof Error ? error.message : 'An unexpected error occurred during authentication',
-    );
+    return new UnexpectedAuthError('Authentication request failed');
   }
 }
