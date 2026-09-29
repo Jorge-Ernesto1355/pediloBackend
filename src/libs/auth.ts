@@ -35,4 +35,10 @@ export const auth = betterAuth({
     secure: env.NODE_ENV === 'production',
     sameSite: 'lax',
   },
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: env.NODE_ENV === 'production',
+      domain: 'pedilo.mx',
+    },
+  },
 });
