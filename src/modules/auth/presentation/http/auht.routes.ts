@@ -13,6 +13,10 @@ import { PasswordRecoveryService } from '../../application/services/PasswordReco
 import { PasswordRecoveryController } from './PasswordRecoveryController.js';
 import { PasswordRecoveryRateLimiter } from './passwordRecoveryRateLimiter.js';
 import { accountController } from '@/modules/Account/presentation/http/account.routes.js';
+import { DeleteAccount } from '../../application/use-cases/DeleteAccount.js';
+import { PrismaAccountDeletionRepository } from '../../infrastructure/persistence/PrismaAccountDeletionRepository.js';
+import { CloudinaryImageStorage } from '@/modules/Business/infrastructure/storage/CloudinaryImageStorage.js';
+import { CloudinaryProductImageStorage } from '@/modules/Product/infrastructure/storage/CloudinaryProductImageStorage.js';
 
 const userRepository = new PrismaUserRepository(prisma);
 
@@ -20,7 +24,17 @@ const registerUser = new RegisterUser(authProvider);
 const loginUser = new LoginUser(authProvider);
 const getCurrentUser = new GetCurrentUser(authProvider, userRepository);
 
-const controller = new AuthController(registerUser, loginUser, getCurrentUser, authProvider);
+const controller = new AuthController(
+  registerUser,
+  loginUser,
+  getCurrentUser,
+  authProvider,
+  new DeleteAccount(
+    new PrismaAccountDeletionRepository(prisma),
+    new CloudinaryImageStorage(),
+    new CloudinaryProductImageStorage(),
+  ),
+);
 const passwordRecovery = new PasswordRecoveryService(
   userRepository,
   new PrismaPasswordResetRepository(prisma),
@@ -28,13 +42,23 @@ const passwordRecovery = new PasswordRecoveryService(
 );
 const passwordRecoveryController = new PasswordRecoveryController(passwordRecovery);
 const passwordRecoveryRateLimiter = new PasswordRecoveryRateLimiter();
+const authenticationRateLimiter = new PasswordRecoveryRateLimiter();
 export const requireAuth = createRequireAuth(authProvider);
 
 export const authRouter = Router();
-authRouter.post('/register', controller.register);
-authRouter.post('/login', controller.login);
+authRouter.post(
+  '/register',
+  authenticationRateLimiter.middleware(5, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),
+  controller.register,
+);
+authRouter.post(
+  '/login',
+  authenticationRateLimiter.middleware(10, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),
+  controller.login,
+);
 authRouter.post('/me', requireAuth, controller.me);
 authRouter.post('/logout', controller.logout);
+authRouter.delete('/account', requireAuth, controller.deleteAccountHandler);
 authRouter.post(
   '/forgot-password',
   passwordRecoveryRateLimiter.middleware(5, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),

@@ -6,6 +6,7 @@ import { AuthProvider, AuthSessionResult } from '../../domain/ports/AuthProvider
 import { loginSchema, registerSchema } from './validators/auth.schemas';
 import { fromNodeHeaders } from 'better-auth/node';
 import { AuthDomainError } from '../../domain/errors/AuthDomainError';
+import { DeleteAccount } from '../../application/use-cases/DeleteAccount.js';
 
 export class AuthController {
   constructor(
@@ -13,6 +14,7 @@ export class AuthController {
     private readonly loginUser: LoginUser,
     private readonly getCurrentUser: GetCurrentUser,
     private readonly authProvider: AuthProvider,
+    private readonly deleteAccount: DeleteAccount,
   ) {}
 
   register = async (req: Request, res: Response) => {
@@ -57,6 +59,15 @@ export class AuthController {
     const headers = fromNodeHeaders(req.headers);
     await this.authProvider.signOut(headers);
     return res.status(204).send();
+  };
+
+  deleteAccountHandler = async (req: Request, res: Response) => {
+    try {
+      await this.deleteAccount.execute(req.user!.id);
+      return res.status(204).send();
+    } catch (error) {
+      return this.handleError(res, error);
+    }
   };
 
   private attachCookies(res: Response, result: AuthSessionResult) {
