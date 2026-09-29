@@ -31,8 +31,11 @@ const controller = new BusinessController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const businessRouter = Router();
-businessRouter.get('/', controller.list);
-businessRouter.get('/slug/:slug', controller.getBySlug);
+// These legacy public endpoints remain available for frontend compatibility, but
+// intentionally return empty payloads and never invoke a repository or use case.
+// The supported public business read endpoint is the catalog route.
+businessRouter.get('/', (_request, response) => response.status(200).json([]));
+businessRouter.get('/slug/:slug', (_request, response) => response.status(200).json({}));
 businessRouter.get('/mine', requireAuth, controller.getMine);
 businessRouter.post(
   '/',
@@ -44,7 +47,7 @@ businessRouter.post(
   ]),
   controller.create,
 );
-businessRouter.get('/:id', controller.getById);
+businessRouter.get('/:id', (_request, response) => response.status(200).json({}));
 businessRouter.patch(
   '/:id',
   requireAuth,
