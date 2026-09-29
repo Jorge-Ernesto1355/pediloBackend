@@ -16,6 +16,7 @@ import {
 import { GetProductAnalyticsSummary } from '../../application/useCases/GetProductAnalyticsSummary.js';
 import { ProductError } from '../../domain/errors/ProductErrors.js';
 import { Product } from '../../domain/entities/Product.js';
+import { isSupportedImageFile } from '@/shared/validation/image-file.js';
 import {
   businessIdSchema,
   categoryIdSchema,
@@ -48,6 +49,9 @@ export class ProductController {
   ) {}
 
   create = (request: Request, response: Response) => {
+    if (request.file && !isSupportedImageFile(request.file)) {
+      return response.status(400).json({ error: 'Unsupported or invalid image file' });
+    }
     const params = businessIdSchema.safeParse(request.params);
     const body = createProductSchema.safeParse(parseMultipartBody(request.body));
     if (!params.success) return badRequest(response, params.error);
@@ -116,6 +120,9 @@ export class ProductController {
   };
 
   update = (request: Request, response: Response) => {
+    if (request.file && !isSupportedImageFile(request.file)) {
+      return response.status(400).json({ error: 'Unsupported or invalid image file' });
+    }
     const params = productIdSchema.safeParse(request.params);
     const body = updateProductSchema.safeParse(parseMultipartBody(request.body));
     if (!params.success) return badRequest(response, params.error);
@@ -228,7 +235,6 @@ export class ProductController {
   };
 
   private handleError(response: Response, error: unknown) {
-    console.log(error);
     if (error instanceof ProductError)
       return response
         .status(error.httpStatus)

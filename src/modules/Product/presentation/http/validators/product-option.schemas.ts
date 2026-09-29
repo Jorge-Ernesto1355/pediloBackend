@@ -60,10 +60,10 @@ export const updateOptionSchema = z
 export const groupStatusSchema = z.object({ isActive: z.boolean() }).strict();
 export const optionStatusSchema = z.object({ isAvailable: z.boolean() }).strict();
 export const reorderGroupSchema = z
-  .object({ optionGroupIds: z.array(z.string().trim().min(1)) })
+  .object({ optionGroupIds: z.array(z.string().trim().min(1)).max(100) })
   .strict();
 export const reorderOptionSchema = z
-  .object({ optionIds: z.array(z.string().trim().min(1)) })
+  .object({ optionIds: z.array(z.string().trim().min(1)).max(100) })
   .strict();
 
 function validateSelectionConfiguration(

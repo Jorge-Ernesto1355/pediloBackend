@@ -245,11 +245,16 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
     productId: string,
     image: { url: string; publicId: string; blurUrl: string },
   ): Promise<void> {
-    const result = await this.prisma.product.updateMany({
+    const product = await this.prisma.product.findFirst({
       where: { id: productId, business: { users: { some: { id: ownerUserId } } } },
+      select: { id: true },
+    });
+    if (!product) throw new ProductNotFoundError();
+
+    await this.prisma.product.update({
+      where: { id: product.id },
       data: { imageUrl: image.url, imageBlurUrl: image.blurUrl, imagePublicId: image.publicId },
     });
-    if (result.count === 0) throw new ProductNotFoundError();
   }
 
   async update(

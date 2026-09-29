@@ -61,7 +61,6 @@ export class PrismaBusinessSettingsRepository implements BusinessSettingsReposit
       select: { businessId: true },
     });
 
-    console.log(user);
     if (!user?.businessId) throw new BusinessSettingsBusinessNotFoundError();
     return user.businessId;
   }

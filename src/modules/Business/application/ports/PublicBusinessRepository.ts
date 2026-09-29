@@ -8,6 +8,7 @@ export interface PublicBusinessCatalog {
     logoBlurUrl: string | null;
     coverUrl: string | null;
     coverBlurUrl: string | null;
+    whatsappNumber: string | null;
     ubication: string | null;
     ubicationMaps: { latitude: number; longitude: number } | null;
     businessSchedule: {

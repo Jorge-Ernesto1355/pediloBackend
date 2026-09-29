@@ -57,7 +57,7 @@ export const productStatusSchema = z
   .transform((value) => ({ isAvailable: value.active ?? value.isAvailable! }));
 export const moveProductSchema = z.object({ targetCategoryId: z.string().trim().min(1) }).strict();
 export const reorderProductsSchema = z
-  .object({ productIds: z.array(z.string().trim().min(1)) })
+  .object({ productIds: z.array(z.string().trim().min(1)).max(100) })
   .strict();
 export const productListQuerySchema = z
   .object({

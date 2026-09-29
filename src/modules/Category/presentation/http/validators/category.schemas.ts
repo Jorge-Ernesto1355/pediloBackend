@@ -22,7 +22,7 @@ export const updateCategorySchema = z
 
 export const categoryStatusSchema = z.object({ isActive: z.boolean() }).strict();
 export const reorderCategoriesSchema = z
-  .object({ categoryIds: z.array(z.string().trim().min(1)).min(0) })
+  .object({ categoryIds: z.array(z.string().trim().min(1)).max(100) })
   .strict();
 export const moveAllProductsSchema = z
   .object({ targetCategoryId: z.string().trim().min(1) })

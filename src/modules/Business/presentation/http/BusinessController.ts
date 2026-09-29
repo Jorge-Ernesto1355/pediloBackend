@@ -14,6 +14,7 @@ import {
 } from './validators/business.schemas.js';
 import { BusinessError } from '../../domain/errors/BusinessErrors.js';
 import { CreateBusinessDTO, UpdateBusinessDTO } from '../../application/dto/BusinessDTO.js';
+import { isSupportedImageFile } from '@/shared/validation/image-file.js';
 
 type UploadedFiles = { [fieldname: string]: Express.Multer.File[] | undefined };
 
@@ -29,6 +30,9 @@ export class BusinessController {
   create = (request: Request, response: Response) => {
     const filesResult = resolveImageFiles(request);
     if ('error' in filesResult) return response.status(400).json({ error: filesResult.error });
+    if (!hasValidImageFiles(filesResult.files)) {
+      return response.status(400).json({ error: 'Unsupported or invalid image file' });
+    }
     const parsed = createBusinessSchema.safeParse(parseMultipartBody(request.body));
     if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() });
     const dto: CreateBusinessDTO = {
@@ -86,6 +90,9 @@ export class BusinessController {
     const filesResult = resolveImageFiles(request);
     if ('error' in filesResult) return response.status(400).json({ error: filesResult.error });
     const files = filesResult.files;
+    if (!hasValidImageFiles(files)) {
+      return response.status(400).json({ error: 'Unsupported or invalid image file' });
+    }
     const normalizedBody = parseMultipartBody(request.body);
     const hasFiles = Boolean(files.logo?.length || files.cover?.length);
     const body = updateBusinessSchema.safeParse(normalizedBody);
@@ -120,7 +127,6 @@ export class BusinessController {
         .status(error.httpStatus)
         .json({ error: { code: error.code, message: error.message } });
     }
-    console.log(error);
     return res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error' } });
   }
 }
@@ -157,6 +163,12 @@ function resolveImageFiles(request: Request): { files: UploadedFiles } | { error
 
 function toImageFile(file: Express.Multer.File) {
   return { buffer: file.buffer, mimetype: file.mimetype };
+}
+
+function hasValidImageFiles(files: UploadedFiles): boolean {
+  return [files.logo?.[0], files.cover?.[0]]
+    .filter((file): file is Express.Multer.File => Boolean(file))
+    .every(isSupportedImageFile);
 }
 
 function parseMultipartBody(body: Record<string, unknown>): Record<string, unknown> {

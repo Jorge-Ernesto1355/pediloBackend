@@ -42,11 +42,18 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
   constructor(private readonly prisma: PrismaClient) {}
 
   async getCatalogBySlug(slug: string): Promise<PublicBusinessCatalog | null> {
+console.log("slug", slug)
+
     const row = await this.prisma.business.findUnique({
       where: { slug },
       include: catalogInclude,
     });
     if (!row) return null;
+
+    const settings = await this.prisma.businessSettings.findUnique({
+      where: { businessId: row.id },
+      select: { whatsapp: true },
+    });
 
     return {
       business: {
@@ -54,11 +61,14 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
         name: row.name,
         slug: row.slug,
         description: row.description,
-        logoUrl: row.images.find((image) => image.type === 'LOGO')?.url ?? null,
-        logoBlurUrl: row.logoBlurUrl,
-        coverUrl: row.images.find((image) => image.type === 'COVER')?.url ?? null,
-        coverBlurUrl: row.coverBlurUrl,
+        logoUrl: row.logoUrl ?? row.images.find((image) => image.type === 'LOGO')?.url ?? null,
+        logoBlurUrl:
+          row.logoBlurUrl ?? row.images.find((image) => image.type === 'LOGO')?.blurUrl ?? null,
+        coverUrl: row.coverUrl ?? row.images.find((image) => image.type === 'COVER')?.url ?? null,
+        coverBlurUrl:
+          row.coverBlurUrl ?? row.images.find((image) => image.type === 'COVER')?.blurUrl ?? null,
         ubication: row.ubication,
+        whatsappNumber: settings?.whatsapp ?? null,
         ubicationMaps: row.ubicationMaps
           ? {
               latitude: row.ubicationMaps.latitude.toNumber(),
