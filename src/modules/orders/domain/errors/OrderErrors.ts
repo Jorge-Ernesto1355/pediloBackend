@@ -10,32 +10,19 @@ export class OrderBusinessAccessError extends AppError {
     super('You do not have access to this business', 403, 'ORDER_BUSINESS_ACCESS_DENIED');
   }
 }
-export class OrderCustomerPhoneAlreadyExistsError extends AppError {
-  constructor() {
-    super(
-      'A customer with this phone number already exists in this business',
-      409,
-      'CUSTOMER_PHONE_ALREADY_EXISTS',
-    );
-  }
-}
 export class OrderNotFoundError extends AppError {
   constructor() {
     super('Order not found', 404, 'ORDER_NOT_FOUND');
   }
 }
 export class OrderProductNotFoundError extends AppError {
-  constructor(productId: string) {
-    super(
-      `Product ${productId} is not available for this business`,
-      400,
-      'ORDER_PRODUCT_NOT_AVAILABLE',
-    );
+  constructor(_productId: string) {
+    super('Product is not available for this business', 400, 'ORDER_PRODUCT_NOT_AVAILABLE');
   }
 }
 export class OrderInvalidOptionsError extends AppError {
-  constructor(productId: string) {
-    super(`Selected options are invalid for product ${productId}`, 400, 'ORDER_INVALID_OPTIONS');
+  constructor(_productId: string) {
+    super('Selected product options are invalid', 400, 'ORDER_INVALID_OPTIONS');
   }
 }
 export class OrderInvalidStatusTransitionError extends AppError {

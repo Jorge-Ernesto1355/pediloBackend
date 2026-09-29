@@ -34,7 +34,7 @@ function orderRow() {
 }
 
 describe('PrismaOrderRepository customer identity', () => {
-  it('rejects an order when the phone already belongs to a customer in the business', async () => {
+  it('reuses the existing customer when the phone belongs to a customer in the business', async () => {
     const row = orderRow();
     const tx = {
       business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
@@ -55,7 +55,7 @@ describe('PrismaOrderRepository customer identity', () => {
         create: vi.fn().mockResolvedValue(row),
       },
       customer: {
-        findFirst: vi.fn().mockResolvedValue({
+        upsert: vi.fn().mockResolvedValue({
           id: 'customer-1',
           businessId: 'business-1',
           name: 'Nombre original',
@@ -69,16 +69,16 @@ describe('PrismaOrderRepository customer identity', () => {
       $transaction: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(
-      new PrismaOrderRepository(prisma).create('business-1', {
-        customer: { name: 'Nombre del pedido', phone: phoneSchema.parse('(669) 123-4567') },
-        items: [{ productId: 'product-1', quantity: 1 }],
-      }),
-    ).rejects.toMatchObject({ code: 'CUSTOMER_PHONE_ALREADY_EXISTS', statusCode: 409 });
-
-    expect(tx.customer.findFirst).toHaveBeenCalledWith({
-      where: { businessId: 'business-1', phone: '6691234567' },
+    await new PrismaOrderRepository(prisma).create('business-1', {
+      customer: { name: 'Nombre del pedido', phone: phoneSchema.parse('(669) 123-4567') },
+      items: [{ productId: 'product-1', quantity: 1 }],
     });
-    expect(tx.order.create).not.toHaveBeenCalled();
+
+    expect(tx.customer.upsert).toHaveBeenCalledWith({
+      where: { businessId_phone: { businessId: 'business-1', phone: '6691234567' } },
+      create: { businessId: 'business-1', name: 'Nombre del pedido', phone: '6691234567' },
+      update: {},
+    });
+    expect(tx.order.create).toHaveBeenCalled();
   });
 });

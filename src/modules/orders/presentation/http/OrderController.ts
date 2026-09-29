@@ -78,6 +78,11 @@ function handle(res: Response, error: unknown) {
     error && typeof error === 'object' && 'statusCode' in error ? Number(error.statusCode) : 500;
   const code =
     error && typeof error === 'object' && 'code' in error ? String(error.code) : 'INTERNAL_ERROR';
-  const message = error instanceof Error ? error.message : 'Unexpected error';
+  const message =
+    error && typeof error === 'object' && 'statusCode' in error
+      ? error instanceof Error
+        ? error.message
+        : 'Unexpected error'
+      : 'Unexpected error';
   return res.status(status).json({ error: { code, message } });
 }

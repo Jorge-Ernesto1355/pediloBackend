@@ -7,7 +7,6 @@ import {
   OrderBusinessAccessError,
   OrderInvalidOptionsError,
   OrderInvalidStatusTransitionError,
-  OrderCustomerPhoneAlreadyExistsError,
   OrderProductNotFoundError,
 } from '../../domain/errors/OrderErrors.js';
 
@@ -82,15 +81,13 @@ export class PrismaOrderRepository implements OrderRepository {
       }
       const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
       const last = await tx.order.aggregate({ where: { businessId }, _max: { orderNumber: true } });
-      const existingCustomer = await tx.customer.findFirst({
-        where: { businessId, phone: input.customer.phone },
+      const savedCustomer = await tx.customer.upsert({
+        where: {
+          businessId_phone: { businessId, phone: input.customer.phone },
+        },
+        create: { businessId, name: input.customer.name, phone: input.customer.phone },
+        update: {},
       });
-      if (existingCustomer) throw new OrderCustomerPhoneAlreadyExistsError();
-      const savedCustomer =
-        existingCustomer ??
-        (await tx.customer.create({
-          data: { businessId, name: input.customer.name, phone: input.customer.phone },
-        }));
       const order = await tx.order.create({
         data: {
           businessId,

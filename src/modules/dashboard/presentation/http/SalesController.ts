@@ -17,7 +17,6 @@ export class SalesController {
       .execute(request.user!.id, query.data.period)
       .then((sales) => response.json(sales))
       .catch((error: unknown) => {
-        console.log(error);
         if (error instanceof Error && 'statusCode' in error && 'code' in error) {
           const appError = error as Error & { statusCode: number; code: string };
           response
