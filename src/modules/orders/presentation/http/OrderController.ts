@@ -74,6 +74,8 @@ function bad(res: Response, error: { flatten(): unknown }) {
   });
 }
 function handle(res: Response, error: unknown) {
+
+  console.log(error)
   const status =
     error && typeof error === 'object' && 'statusCode' in error ? Number(error.statusCode) : 500;
   const code =

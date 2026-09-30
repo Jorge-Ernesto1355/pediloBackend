@@ -16,14 +16,15 @@ export class CreateProduct {
     const product = await this.repository.create({ ownerUserId, businessId, ...fields });
     if (!imageFile) return product;
     const imageStorage = this.imageStorage;
-    const saveImage = this.repository.saveImage;
-    if (!imageStorage || !saveImage) throw new Error('Product image services are not configured');
+    const repository = this.repository;
+    if (!imageStorage || !repository.saveImage)
+      throw new Error('Product image services are not configured');
     const productId = product.toJSON().id;
     let uploadedPublicId: string | undefined;
     try {
       const image = await imageStorage.upload(imageFile, `products/${productId}`);
       uploadedPublicId = image.publicId;
-      await saveImage(ownerUserId, productId, image);
+      await repository.saveImage(ownerUserId, productId, image);
     } catch (error) {
       if (uploadedPublicId) await imageStorage.delete(uploadedPublicId).catch(() => undefined);
       await this.repository.delete(ownerUserId, productId);

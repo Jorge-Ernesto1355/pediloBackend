@@ -235,6 +235,7 @@ export class ProductController {
   };
 
   private handleError(response: Response, error: unknown) {
+    console.log(error)
     if (error instanceof ProductError)
       return response
         .status(error.httpStatus)

@@ -52,7 +52,7 @@ describe('PrismaOrderRepository customer identity', () => {
       },
       order: {
         aggregate: vi.fn().mockResolvedValue({ _max: { orderNumber: 0 } }),
-        create: vi.fn().mockResolvedValue(row),
+        create: vi.fn().mockResolvedValue({ id: row.id }),
       },
       customer: {
         upsert: vi.fn().mockResolvedValue({
@@ -67,6 +67,7 @@ describe('PrismaOrderRepository customer identity', () => {
     };
     const prisma = {
       $transaction: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+      order: { findUnique: vi.fn().mockResolvedValue(row) },
     } as unknown as PrismaClient;
 
     await new PrismaOrderRepository(prisma).create('business-1', {

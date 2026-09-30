@@ -22,7 +22,7 @@ export class PrismaOrderRepository implements OrderRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async create(businessId: string, input: CreateOrderDTO): Promise<Order> {
-    return this.prisma.$transaction(async (tx) => {
+    const orderId = await this.prisma.$transaction(async (tx) => {
       const business = await tx.business.findUnique({
         where: { id: businessId },
         select: { id: true },
@@ -102,10 +102,16 @@ export class PrismaOrderRepository implements OrderRepository {
           items: { create: items.map((item) => ({ ...item, options: { create: item.options } })) },
           statusHistory: { create: { status: 'PENDING' } },
         },
-        include: orderInclude,
       });
-      return toDomain(order);
+      return order.id;
+    }, { timeout: 15_000 });
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: orderInclude,
     });
+    if (!order) throw new Error('Created order could not be loaded');
+    return toDomain(order);
   }
 
   async getById(ownerUserId: string, orderId: string): Promise<Order | null> {
