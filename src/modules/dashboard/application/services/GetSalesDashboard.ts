@@ -1,17 +1,16 @@
-import type {
-  SalesAggregation,
-  SalesBucket,
-  SalesPeriod,
-  SalesRepository,
-} from '../ports/SalesRepository.js';
+import type { SalesAggregation, SalesPeriod, SalesRepository } from '../ports/SalesRepository.js';
 
 export interface SalesPoint {
   label: string;
+  start: string;
   sales: number;
   orderCount: number;
 }
 
 export interface SalesDashboard {
+  period: SalesPeriod;
+  granularity: 'hour' | 'day';
+  timezone: string;
   total: number;
   ordersCount: number;
   trend: number;
@@ -30,6 +29,9 @@ export class GetSalesDashboard {
     );
 
     return {
+      period,
+      granularity: period === 'today' ? 'hour' : 'day',
+      timezone: aggregation.timezone,
       total: roundMoney(aggregation.current.total),
       ordersCount: aggregation.current.orderCount,
       trend: calculateTrend(aggregation.current.total, aggregation.previous.total),
@@ -42,95 +44,15 @@ export class GetSalesDashboard {
   }
 }
 
-interface DateParts {
-  year: number;
-  month: number;
-  day: number;
-}
-
-const weekdays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-
 function buildPoints(period: SalesPeriod, aggregation: SalesAggregation): SalesPoint[] {
-  if (period === 'today') return buildTodayPoints(aggregation.buckets);
-  if (period === '7d') return buildSevenDayPoints(aggregation.buckets, aggregation.timezone);
-  if (period === '30d') return buildThirtyDayPoints(aggregation.buckets, aggregation.timezone);
-  return buildMonthPoints(aggregation.buckets, aggregation.timezone);
-}
-
-function buildTodayPoints(buckets: SalesBucket[]): SalesPoint[] {
-  const values = [0, 0, 0, 0, 0];
-  const orderCounts = [0, 0, 0, 0, 0];
-  for (const row of buckets) {
-    const hour = Number(row.bucket);
-    const index = hour < 12 ? 0 : hour < 15 ? 1 : hour < 18 ? 2 : hour < 21 ? 3 : 4;
-    values[index] = (values[index] ?? 0) + row.sales;
-    orderCounts[index] = (orderCounts[index] ?? 0) + row.orderCount;
-  }
-  return ['9 am', '12 pm', '3 pm', '6 pm', '9 pm'].map((label, index) => ({
-    label,
-    sales: roundMoney(values[index] ?? 0),
-    orderCount: orderCounts[index] ?? 0,
-  }));
-}
-
-function buildSevenDayPoints(buckets: SalesBucket[], timezone: string): SalesPoint[] {
-  const today = dateOnly(new Date(), timezone);
-  const values = new Map(
-    buckets.map((row) => [
-      row.bucket.slice(0, 10),
-      { sales: row.sales, orderCount: row.orderCount },
-    ]),
-  );
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(today, index - 6);
-    const key = isoDate(date);
-    const value = values.get(key);
-    return {
-      label: weekdays[weekday(date)] ?? '',
-      sales: roundMoney(value?.sales ?? 0),
-      orderCount: value?.orderCount ?? 0,
-    };
-  });
-}
-
-function buildThirtyDayPoints(buckets: SalesBucket[], timezone: string): SalesPoint[] {
-  const today = dateOnly(new Date(), timezone);
-  const start = addDays(today, -29);
-  const values = new Map<number, number>();
-  const orderCounts = new Map<number, number>();
-  for (const row of buckets) {
-    const date = parseDate(row.bucket);
-    const index =
-      Math.round(
-        (Date.UTC(date.year, date.month - 1, date.day) -
-          Date.UTC(start.year, start.month - 1, start.day)) /
-          86_400_000,
-      ) + 1;
-    const point = index === 30 ? 6 : Math.floor((index - 1) / 5);
-    values.set(point, (values.get(point) ?? 0) + row.sales);
-    orderCounts.set(point, (orderCounts.get(point) ?? 0) + row.orderCount);
-  }
-  return [1, 6, 11, 16, 21, 26, 30].map((label, index) => ({
-    label: String(label),
-    sales: roundMoney(values.get(index) ?? 0),
-    orderCount: orderCounts.get(index) ?? 0,
-  }));
-}
-
-function buildMonthPoints(buckets: SalesBucket[], timezone: string): SalesPoint[] {
-  const values = new Map<number, number>();
-  const orderCounts = new Map<number, number>();
-  for (const row of buckets) {
-    const day = parseDate(row.bucket).day;
-    const week = Math.floor((day - 1) / 7) + 1;
-    values.set(week, (values.get(week) ?? 0) + row.sales);
-    orderCounts.set(week, (orderCounts.get(week) ?? 0) + row.orderCount);
-  }
-  const count = Math.max(1, Math.ceil(dateOnly(new Date(), timezone).day / 7));
-  return Array.from({ length: count }, (_, index) => ({
-    label: `Sem ${index + 1}`,
-    sales: roundMoney(values.get(index + 1) ?? 0),
-    orderCount: orderCounts.get(index + 1) ?? 0,
+  return aggregation.buckets.map((row) => ({
+    label:
+      period === 'today'
+        ? hourLabel(row.bucket, aggregation.timezone)
+        : dayLabel(row.bucket, period),
+    start: bucketStart(row.bucket, period, aggregation.timezone),
+    sales: roundMoney(row.sales),
+    orderCount: row.orderCount,
   }));
 }
 
@@ -147,34 +69,56 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function dateOnly(date: Date, timezone: string): DateParts {
+function hourLabel(bucket: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(bucket));
+}
+
+function dayLabel(bucket: string, period: SalesPeriod): string {
+  const date = new Date(`${bucket.slice(0, 10)}T00:00:00.000Z`);
+  if (period === '7d') {
+    return new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'short', day: 'numeric' })
+      .format(date)
+      .replace('.', '');
+  }
+  return bucket.slice(8, 10);
+}
+
+function bucketStart(bucket: string, period: SalesPeriod, timezone: string): string {
+  if (period === 'today') return new Date(bucket).toISOString();
+  const [year = 0, month = 0, day = 0] = bucket.slice(0, 10).split('-').map(Number);
+  const localMidnight = Date.UTC(year, month - 1, day);
+  let instant = localMidnight;
+  for (let index = 0; index < 3; index += 1) {
+    instant = localMidnight - timezoneOffset(instant, timezone);
+  }
+  return new Date(instant).toISOString();
+}
+
+function timezoneOffset(instant: number, timezone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(date);
-  return {
-    year: Number(parts.find((part) => part.type === 'year')?.value),
-    month: Number(parts.find((part) => part.type === 'month')?.value),
-    day: Number(parts.find((part) => part.type === 'day')?.value),
-  };
-}
-
-function parseDate(value: string): DateParts {
-  const [year = 0, month = 0, day = 0] = value.slice(0, 10).split('-').map(Number);
-  return { year, month, day };
-}
-
-function isoDate(parts: DateParts): string {
-  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
-}
-
-function addDays(parts: DateParts, days: number): DateParts {
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
-  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
-}
-
-function weekday(parts: DateParts): number {
-  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(instant));
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return (
+    Date.UTC(
+      value('year'),
+      value('month') - 1,
+      value('day'),
+      value('hour'),
+      value('minute'),
+      value('second'),
+    ) - instant
+  );
 }
