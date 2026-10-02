@@ -38,7 +38,8 @@ export class PrismaSalesRepository implements SalesRepository {
     });
     if (!business?.businessId) throw new AppError('Business not found', 404, 'BUSINESS_NOT_FOUND');
     const timezone = business.business?.settings?.timezone || 'America/Mazatlan';
-    const ranges = buildRanges(period, timezone, new Date());
+    const now = new Date();
+    const ranges = buildRanges(period, timezone, now);
     const { current, previous } = ranges;
     // PostgreSQL does not implicitly compare a native enum column with text
     // parameters produced by Prisma's raw-query builder.
@@ -60,22 +61,50 @@ export class PrismaSalesRepository implements SalesRepository {
     const buckets =
       bucket === 'hour'
         ? await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          SELECT EXTRACT(HOUR FROM (o."createdAt" AT TIME ZONE ${timezone}))::int AS "bucket",
-                 COALESCE(SUM(o."total"), 0) AS "sales",
-                 COUNT(*) AS "orderCount"
-          FROM "Order" o
-          WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-            AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
-          GROUP BY "bucket" ORDER BY "bucket"
+          WITH hours AS (
+            SELECT generate_series(
+              ${current.start}::timestamp,
+              ${current.end}::timestamp - interval '1 hour',
+              interval '1 hour'
+            ) AS bucket
+          ), sales AS (
+            SELECT date_trunc(
+                     'hour',
+                     o."createdAt" AT TIME ZONE 'UTC',
+                     ${timezone}
+                   ) AT TIME ZONE 'UTC' AS bucket,
+                   SUM(o."total") AS sales,
+                   COUNT(*) AS "orderCount"
+            FROM "Order" o
+            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
+              AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
+            GROUP BY 1
+          )
+          SELECT to_char(hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
+                 COALESCE(sales.sales, 0) AS "sales",
+                 COALESCE(sales."orderCount", 0) AS "orderCount"
+          FROM hours LEFT JOIN sales USING (bucket) ORDER BY hours.bucket
         `)
         : await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          SELECT ((o."createdAt" AT TIME ZONE ${timezone})::date)::text AS "bucket",
-                 COALESCE(SUM(o."total"), 0) AS "sales",
-                 COUNT(*) AS "orderCount"
-          FROM "Order" o
-          WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-            AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
-          GROUP BY "bucket" ORDER BY "bucket"
+          WITH days AS (
+            SELECT generate_series(
+              ${isoDate(localDate(current.start, timezone))}::timestamp,
+              ${isoDate(localDate(now, timezone))}::timestamp,
+              interval '1 day'
+            )::date AS bucket
+          ), sales AS (
+            SELECT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date AS bucket,
+                   SUM(o."total") AS sales,
+                   COUNT(*) AS "orderCount"
+            FROM "Order" o
+            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
+              AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
+            GROUP BY 1
+          )
+          SELECT to_char(days.bucket, 'YYYY-MM-DD') AS "bucket",
+                 COALESCE(sales.sales, 0) AS "sales",
+                 COALESCE(sales."orderCount", 0) AS "orderCount"
+          FROM days LEFT JOIN sales USING (bucket) ORDER BY days.bucket
         `);
     const row = totals[0];
     return {
@@ -118,7 +147,7 @@ function buildRanges(
     Math.min(today.day, daysInMonth(previousMonth.year, previousMonth.month)),
   );
   return {
-    current: { start: zonedStart(monthStart, timezone), end: zonedStart(tomorrow, timezone) },
+    current: { start: zonedStart(monthStart, timezone), end: now },
     previous: {
       start: zonedStart(previousMonth, timezone),
       end: zonedStart(previousEnd, timezone),
@@ -198,6 +227,10 @@ function addMonths(parts: DateParts, months: number): DateParts {
 
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function isoDate(parts: DateParts): string {
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
 function toNumber(value: Prisma.Decimal | number | bigint | null | undefined): number {
