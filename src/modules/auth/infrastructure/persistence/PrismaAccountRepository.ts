@@ -3,10 +3,8 @@ import { AccountProfile, AccountRepository } from '../../application/ports/Accou
 import { EmailVerificationTokenRepository } from '../../application/ports/EmailVerificationTokenRepository.js';
 
 const generatedOrderStatuses: OrderStatus[] = [
-  OrderStatus.CONFIRMED,
   OrderStatus.PREPARING,
   OrderStatus.READY,
-  OrderStatus.COMPLETED,
 ];
 
 export class PrismaAccountRepository implements AccountRepository {

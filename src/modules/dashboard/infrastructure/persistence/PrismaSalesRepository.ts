@@ -6,7 +6,7 @@ import type {
 } from '../../application/ports/SalesRepository.js';
 import { AppError } from '@/shared/errors/app-error.js';
 
-const saleStatuses = ['CONFIRMED', 'PREPARING', 'READY', 'COMPLETED'];
+const saleStatuses = ['PREPARING', 'READY'];
 
 interface TotalRow {
   currentTotal: Prisma.Decimal | number | null;

@@ -97,7 +97,7 @@ El rate limit actual es un límite en memoria por proceso: 5 solicitudes de forg
 
 Todas las rutas `/api/v1/account/*` requieren la sesión de Better Auth en cookies. No reciben `userId`; siempre operan sobre el usuario autenticado.
 
-- `GET /api/v1/account` devuelve `name`, `email`, `emailVerified`, `createdAt` y `stats` (`customersCount`, `totalGenerated`, `ordersCount`). Las ventas contabilizadas usan órdenes `CONFIRMED`, `PREPARING`, `READY` y `COMPLETED` desde la creación de la cuenta.
+- `GET /api/v1/account` devuelve `name`, `email`, `emailVerified`, `createdAt` y `stats` (`customersCount`, `totalGenerated`, `ordersCount`). Las ventas contabilizadas usan órdenes `PREPARING` y `READY` desde la creación de la cuenta.
 - `PATCH /api/v1/account` recibe únicamente `{ "name": "Nuevo Nombre" }`. Rechaza campos adicionales, valida longitud y devuelve `409` si otro usuario tiene exactamente el mismo nombre.
 - `POST /api/v1/account/email-verification` y `POST /api/v1/account/email-verification/resend` no reciben body. No envían nada si el email ya está verificado. Generan un token aleatorio, guardan solo SHA-256, invalidan tokens pendientes y aplican 3 solicitudes por usuario cada 15 minutos.
 - `POST /api/v1/auth/verify-email` recibe `{ "token": "..." }`. Un token válido, no expirado y no utilizado marca `emailVerified=true`. Una repetición del mismo token después de completar la verificación devuelve `200` de forma idempotente sin volver a modificar nada; los tokens inválidos o expirados devuelven `400`.
