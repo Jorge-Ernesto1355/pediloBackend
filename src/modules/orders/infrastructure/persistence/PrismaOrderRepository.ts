@@ -175,11 +175,9 @@ export class PrismaOrderRepository implements OrderRepository {
 }
 
 const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PREPARING', 'CANCELLED'],
+  PENDING: ['PREPARING', 'CANCELLED'],
   PREPARING: ['READY', 'CANCELLED'],
-  READY: ['COMPLETED', 'CANCELLED'],
-  COMPLETED: [],
+  READY: [],
   CANCELLED: [],
 };
 

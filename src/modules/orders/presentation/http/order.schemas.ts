@@ -18,13 +18,13 @@ export const createOrderSchema = z
   .strict();
 export const orderStatusSchema = z
   .object({
-    status: z.enum(['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']),
+    status: z.enum(['PENDING', 'PREPARING', 'READY', 'CANCELLED']),
   })
   .strict();
 export const orderListSchema = z
   .object({
     status: z
-      .enum(['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'])
+      .enum(['PENDING', 'PREPARING', 'READY', 'CANCELLED'])
       .optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),

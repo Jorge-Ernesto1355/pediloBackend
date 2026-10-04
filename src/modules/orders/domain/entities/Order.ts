@@ -1,5 +1,5 @@
 export type OrderStatus =
-  'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+  'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
 
 export interface OrderItemOptionProps {
   id: string;
