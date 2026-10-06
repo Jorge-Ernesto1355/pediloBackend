@@ -1,5 +1,5 @@
-export type OrderStatus =
-  'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
+export type OrderStatus = 'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
+export type OrderSource = 'PUBLIC' | 'RESTAURANT';
 
 export interface OrderItemOptionProps {
   id: string;
@@ -21,6 +21,7 @@ export interface OrderProps {
   customerId: string | null;
   orderNumber: number;
   status: OrderStatus;
+  source: OrderSource;
   subtotal: number;
   total: number;
   customerName: string | null;

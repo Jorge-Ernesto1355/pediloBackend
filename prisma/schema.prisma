@@ -326,6 +326,7 @@ model Order {
   orderNumber Int
 
   status   OrderStatus
+  source   OrderSource @default(PUBLIC)
   subtotal Decimal     @db.Decimal(10, 2)
   total    Decimal     @db.Decimal(10, 2)
 
@@ -353,6 +354,11 @@ enum OrderStatus {
   PREPARING
   READY
   CANCELLED
+}
+
+enum OrderSource {
+  PUBLIC
+  RESTAURANT
 }
 
 model OrderItem {

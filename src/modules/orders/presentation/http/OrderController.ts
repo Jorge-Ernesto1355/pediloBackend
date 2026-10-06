@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { CreateOrder } from '../../application/useCases/CreateOrder.js';
+import { CreateRestaurantOrder } from '../../application/useCases/CreateRestaurantOrder.js';
 import { GetOrder } from '../../application/useCases/GetOrder.js';
 import { ListOrders } from '../../application/useCases/ListOrders.js';
 import { UpdateOrderStatus } from '../../application/useCases/UpdateOrderStatus.js';
 import {
   businessIdSchema,
   createOrderSchema,
+  createRestaurantOrderSchema,
   orderIdSchema,
   orderListSchema,
   orderStatusSchema,
@@ -14,6 +16,7 @@ import {
 export class OrderController {
   constructor(
     private readonly createOrder: CreateOrder,
+    private readonly createRestaurantOrder: CreateRestaurantOrder,
     private readonly getOrder: GetOrder,
     private readonly listOrders: ListOrders,
     private readonly updateOrderStatus: UpdateOrderStatus,
@@ -25,6 +28,23 @@ export class OrderController {
     if (!body.success) return bad(res, body.error);
     return this.createOrder
       .execute(params.data.businessId, body.data)
+      .then((order) => res.status(201).json({ order: order.toJSON() }))
+      .catch((error) => handle(res, error));
+  };
+  createRestaurant = (req: Request, res: Response) => {
+    const params = businessIdSchema.safeParse(req.params);
+    const body = createRestaurantOrderSchema.safeParse(req.body);
+    if (!params.success) return bad(res, params.error);
+    if (!body.success) return bad(res, body.error);
+    return this.createRestaurantOrder
+      .execute(req.user!.id, params.data.businessId, {
+        customer: {
+          name: body.data.customerName ?? null,
+          phone: body.data.customerPhone ?? null,
+        },
+        items: body.data.items,
+        notes: body.data.notes,
+      })
       .then((order) => res.status(201).json({ order: order.toJSON() }))
       .catch((error) => handle(res, error));
   };
@@ -74,8 +94,7 @@ function bad(res: Response, error: { flatten(): unknown }) {
   });
 }
 function handle(res: Response, error: unknown) {
-
-  console.log(error)
+  console.log(error);
   const status =
     error && typeof error === 'object' && 'statusCode' in error ? Number(error.statusCode) : 500;
   const code =
