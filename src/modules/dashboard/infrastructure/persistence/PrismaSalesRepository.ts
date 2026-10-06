@@ -5,6 +5,15 @@ import type {
   SalesRepository,
 } from '../../application/ports/SalesRepository.js';
 import { AppError } from '@/shared/errors/app-error.js';
+import {
+  addDays,
+  addMonths,
+  daysInMonth,
+  getBusinessPeriodRange,
+  localDate,
+  zonedStart,
+} from '@/shared/time/business-period.js';
+import type { DateParts } from '@/shared/time/business-period.js';
 
 const saleStatuses = ['PREPARING', 'READY'];
 
@@ -120,11 +129,6 @@ export class PrismaSalesRepository implements SalesRepository {
   }
 }
 
-interface DateParts {
-  year: number;
-  month: number;
-  day: number;
-}
 interface Range {
   start: Date;
   end: Date;
@@ -136,10 +140,33 @@ function buildRanges(
   now: Date,
 ): { current: Range; previous: Range } {
   const today = localDate(now, timezone);
-  const tomorrow = addDays(today, 1);
-  if (period === 'today') return pair(today, tomorrow, 1, timezone);
-  if (period === '7d') return pair(addDays(today, -6), tomorrow, 7, timezone);
-  if (period === '30d') return pair(addDays(today, -29), tomorrow, 30, timezone);
+  if (period === 'today') {
+    return {
+      current: getBusinessPeriodRange('today', timezone, now),
+      previous: {
+        start: zonedStart(addDays(today, -1), timezone),
+        end: zonedStart(today, timezone),
+      },
+    };
+  }
+  if (period === '7d') {
+    return {
+      current: getBusinessPeriodRange('7d', timezone, now),
+      previous: {
+        start: zonedStart(addDays(today, -13), timezone),
+        end: zonedStart(addDays(today, -6), timezone),
+      },
+    };
+  }
+  if (period === '30d') {
+    return {
+      current: getBusinessPeriodRange('30d', timezone, now),
+      previous: {
+        start: zonedStart(addDays(today, -59), timezone),
+        end: zonedStart(addDays(today, -29), timezone),
+      },
+    };
+  }
   const monthStart = { year: today.year, month: today.month, day: 1 };
   const previousMonth = addMonths(monthStart, -1);
   const previousEnd = addDays(
@@ -147,86 +174,12 @@ function buildRanges(
     Math.min(today.day, daysInMonth(previousMonth.year, previousMonth.month)),
   );
   return {
-    current: { start: zonedStart(monthStart, timezone), end: now },
+    current: getBusinessPeriodRange('thisMonth', timezone, now),
     previous: {
       start: zonedStart(previousMonth, timezone),
       end: zonedStart(previousEnd, timezone),
     },
   };
-}
-
-function pair(
-  start: DateParts,
-  end: DateParts,
-  days: number,
-  timezone: string,
-): { current: Range; previous: Range } {
-  return {
-    current: { start: zonedStart(start, timezone), end: zonedStart(end, timezone) },
-    previous: {
-      start: zonedStart(addDays(start, -days), timezone),
-      end: zonedStart(start, timezone),
-    },
-  };
-}
-
-function localDate(date: Date, timezone: string): DateParts {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  return {
-    year: Number(parts.find((part) => part.type === 'year')?.value ?? 0),
-    month: Number(parts.find((part) => part.type === 'month')?.value ?? 0),
-    day: Number(parts.find((part) => part.type === 'day')?.value ?? 0),
-  };
-}
-
-function zonedStart(parts: DateParts, timezone: string): Date {
-  const localUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
-  let instant = localUtc;
-  for (let index = 0; index < 3; index += 1) instant = localUtc - timezoneOffset(instant, timezone);
-  return new Date(instant);
-}
-
-function timezoneOffset(instant: number, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(instant));
-  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
-  return (
-    Date.UTC(
-      value('year'),
-      value('month') - 1,
-      value('day'),
-      value('hour'),
-      value('minute'),
-      value('second'),
-    ) - instant
-  );
-}
-
-function addDays(parts: DateParts, days: number): DateParts {
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
-  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
-}
-
-function addMonths(parts: DateParts, months: number): DateParts {
-  const date = new Date(Date.UTC(parts.year, parts.month - 1 + months, 1));
-  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: 1 };
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 function isoDate(parts: DateParts): string {

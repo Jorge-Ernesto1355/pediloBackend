@@ -28,13 +28,15 @@ export class GetSalesDashboard {
       period === 'today' ? 'hour' : 'day',
     );
 
+    const trend = calculateTrend(aggregation.current.total, aggregation.previous.total);
+
     return {
       period,
       granularity: period === 'today' ? 'hour' : 'day',
       timezone: aggregation.timezone,
       total: roundMoney(aggregation.current.total),
       ordersCount: aggregation.current.orderCount,
-      trend: calculateTrend(aggregation.current.total, aggregation.previous.total),
+      trend,
       averageTicket: calculateAverageTicket(
         aggregation.current.total,
         aggregation.current.orderCount,
@@ -57,7 +59,7 @@ function buildPoints(period: SalesPeriod, aggregation: SalesAggregation): SalesP
 }
 
 export function calculateTrend(current: number, previous: number): number {
-  if (previous === 0) return current === 0 ? 0 : 100;
+  if (previous === 0) return current;
   return Math.round(((current - previous) / previous) * 100);
 }
 

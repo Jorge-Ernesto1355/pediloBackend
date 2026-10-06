@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GetSalesDashboard } from './GetSalesDashboard.js';
+import { calculateTrend, GetSalesDashboard } from './GetSalesDashboard.js';
 import type { SalesAggregation, SalesPeriod, SalesRepository } from '../ports/SalesRepository.js';
 
 const fixedNow = new Date('2026-09-29T12:00:00.000Z');
@@ -138,7 +138,32 @@ describe('GetSalesDashboard bucket granularity', () => {
     expect(result.points[0]?.start).toBe('2026-09-30T07:00:00.000Z');
   });
 
-  it('preserves zero-safe trend and average calculations', async () => {
+  it('uses the current value as numeric trend when the previous period is zero', async () => {
+    expect(calculateTrend(27, 0)).toBe(27);
+    expect(calculateTrend(6365, 0)).toBe(6365);
+    expect(calculateTrend(200, 0)).toBe(200);
+
+    const data = aggregation([{ bucket: '2026-09-29T12:00:00.000Z', sales: 6365, orderCount: 27 }]);
+    data.previous = { total: 0, orderCount: 0 };
+    const result = await execute('today', data);
+    expect(result).toMatchObject({
+      total: 6365,
+      ordersCount: 27,
+      trend: 6365,
+    });
+  });
+
+  it('calculates percentage trends without capping growth', () => {
+    expect(calculateTrend(200, 100)).toBe(100);
+    expect(calculateTrend(150, 100)).toBe(50);
+    expect(calculateTrend(300, 100)).toBe(200);
+    expect(calculateTrend(1000, 100)).toBe(900);
+    expect(calculateTrend(75, 100)).toBe(-25);
+  });
+
+  it('handles zero-safe trend states and declines', async () => {
+    expect(calculateTrend(0, 100)).toBe(-100);
+
     const data = aggregation([]);
     data.previous = { total: 0, orderCount: 0 };
     const result = await execute('today', data);
