@@ -1,5 +1,11 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { Menu, MenuCategorySummary, MenuProps } from '../../domain/entities/Menu.js';
+import {
+  Menu,
+  MenuCategorySummary,
+  MenuProduct,
+  MenuProductOptionGroup,
+  MenuProps,
+} from '../../domain/entities/Menu.js';
 import {
   MenuAccessDeniedError,
   MenuBusinessNotFoundError,
@@ -11,7 +17,24 @@ import {
   UpdateMenuRepositoryInput,
 } from '../../domain/ports/MenuRepository.js';
 
-const menuInclude = { categories: { orderBy: { sortOrder: 'asc' as const } } };
+const menuInclude = {
+  categories: {
+    orderBy: { sortOrder: 'asc' },
+    include: {
+      products: {
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        include: {
+          optionGroups: {
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              options: { orderBy: { sortOrder: 'asc' } },
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.MenuInclude;
 
 export class PrismaMenuRepository implements MenuRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -136,6 +159,42 @@ function toDomain(row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>): 
     description: category.description,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
+    products: category.products.map((product): MenuProduct => ({
+      id: product.id,
+      businessId: product.businessId,
+      categoryId: product.categoryId,
+      name: product.name,
+      description: product.description,
+      price: product.price.toNumber(),
+      imageUrl: product.imageUrl,
+      imageBlurUrl: product.imageBlurUrl,
+      sortOrder: product.sortOrder,
+      isAvailable: product.isAvailable,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+      optionGroups: product.optionGroups.map((group): MenuProductOptionGroup => ({
+        id: group.id,
+        productId: group.productId,
+        name: group.name,
+        isRequired: group.isRequired,
+        minSelections: group.minSelections,
+        maxSelections: group.maxSelections,
+        sortOrder: group.sortOrder,
+        isActive: group.isActive,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+        options: group.options.map((option) => ({
+          id: option.id,
+          optionGroupId: option.optionGroupId,
+          name: option.name,
+          price: option.price.toNumber(),
+          isAvailable: option.isAvailable,
+          sortOrder: option.sortOrder,
+          createdAt: option.createdAt,
+          updatedAt: option.updatedAt,
+        })),
+      })),
+    })),
   }));
 
   const props: MenuProps = {

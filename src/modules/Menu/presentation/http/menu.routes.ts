@@ -10,6 +10,7 @@ import { SetMenuActive } from '../../application/useCases/SetMenuActive.js';
 import { UpdateMenu } from '../../application/useCases/UpdateMenu.js';
 import { PrismaMenuRepository } from '../../infrastructure/persistence/PrismaMenuRepository.js';
 import { MenuController } from './MenuController.js';
+import { noConditionalCatalogCache } from './menu-cache.middleware.js';
 
 const repository = new PrismaMenuRepository(prisma);
 const controller = new MenuController(
@@ -24,7 +25,7 @@ const requireAuth = createRequireAuth(authProvider);
 
 export const menuRouter = Router();
 menuRouter.post('/:businessId/menus', requireAuth, controller.create);
-menuRouter.get('/mine/menus', requireAuth, controller.list);
+menuRouter.get('/mine/menus', requireAuth, noConditionalCatalogCache, controller.list);
 menuRouter.get('/:businessId/menus', requireAuth, controller.list);
 menuRouter.get('/menus/:id', requireAuth, controller.get);
 menuRouter.patch('/menus/:id', requireAuth, controller.update);
