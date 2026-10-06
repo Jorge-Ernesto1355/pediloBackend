@@ -42,20 +42,11 @@ const passwordRecovery = new PasswordRecoveryService(
 );
 const passwordRecoveryController = new PasswordRecoveryController(passwordRecovery);
 const passwordRecoveryRateLimiter = new PasswordRecoveryRateLimiter();
-const authenticationRateLimiter = new PasswordRecoveryRateLimiter();
 export const requireAuth = createRequireAuth(authProvider);
 
 export const authRouter = Router();
-authRouter.post(
-  '/register',
-  authenticationRateLimiter.middleware(5, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),
-  controller.register,
-);
-authRouter.post(
-  '/login',
-  authenticationRateLimiter.middleware(10, 15 * 60 * 1000, (request) => request.ip ?? 'unknown'),
-  controller.login,
-);
+authRouter.post('/register', controller.register);
+authRouter.post('/login', controller.login);
 authRouter.post('/me', requireAuth, controller.me);
 authRouter.post('/logout', controller.logout);
 authRouter.delete('/account', requireAuth, controller.deleteAccountHandler);
