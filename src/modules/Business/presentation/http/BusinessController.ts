@@ -85,7 +85,7 @@ export class BusinessController {
       .catch(next);
   };
 
-  update = (request: Request, response: Response, next: NextFunction) => {
+  update = (request: Request, response: Response) => {
     const params = businessIdSchema.safeParse(request.params);
     const filesResult = resolveImageFiles(request);
     if ('error' in filesResult) return response.status(400).json({ error: filesResult.error });
@@ -109,7 +109,7 @@ export class BusinessController {
     return this.updateBusiness
       .execute(request.user!.id, params.data.id, dto)
       .then((business) => response.json({ business: business.toJSON() }))
-      .catch(next);
+      .catch((error) => this.handleError(response, error));
   };
 
   delete = (request: Request, response: Response, next: NextFunction) => {
