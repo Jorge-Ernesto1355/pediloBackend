@@ -48,6 +48,8 @@ console.log("slug", slug)
       where: { slug },
       include: catalogInclude,
     });
+
+    console.log(slug)
     if (!row) return null;
 
     const settings = await this.prisma.businessSettings.findUnique({

@@ -37,7 +37,10 @@ export const auth = betterAuth({
   },
   advanced: {
     crossSubDomainCookies: {
-      enabled: env.NODE_ENV === 'production',
+      // OAuth starts on pedilo.mx but completes on api.pedilo.mx. Share the
+      // session/state cookies based on the deployed auth host, not NODE_ENV;
+      // the production runtime does not reliably provide that variable.
+      enabled: new URL(authBaseUrl).hostname === 'api.pedilo.mx',
       domain: 'pedilo.mx',
     },
   },
