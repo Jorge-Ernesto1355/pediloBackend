@@ -7,6 +7,18 @@ export interface SalesPoint {
   orderCount: number;
 }
 
+export interface SalesComparisonPoint {
+  timestamp: string;
+  label: string;
+  current_sales: number;
+  previous_sales: number;
+  difference: number;
+  percentage_change: number | null;
+  current_orders_count: number;
+  previous_orders_count: number;
+  status: 'OK' | 'NO_BASELINE';
+}
+
 export interface SalesDashboard {
   period: SalesPeriod;
   granularity: 'hour' | 'day';
@@ -16,6 +28,18 @@ export interface SalesDashboard {
   trend: number;
   averageTicket: number;
   points: SalesPoint[];
+  series: {
+    current: SalesPoint[];
+    previous: SalesPoint[];
+  };
+  comparison: {
+    current_total: number;
+    previous_total: number;
+    difference: number;
+    percentage_change: number | null;
+    status: 'OK' | 'NO_BASELINE';
+  };
+  tooltip: SalesComparisonPoint[];
 }
 
 export class GetSalesDashboard {
@@ -29,6 +53,9 @@ export class GetSalesDashboard {
     );
 
     const trend = calculateTrend(aggregation.current.total, aggregation.previous.total);
+    const currentPoints = buildPoints(period, aggregation.buckets, aggregation.timezone);
+    const previousPoints = buildPoints(period, aggregation.previousBuckets, aggregation.timezone);
+    const comparison = buildComparison(aggregation.current.total, aggregation.previous.total);
 
     return {
       period,
@@ -41,25 +68,86 @@ export class GetSalesDashboard {
         aggregation.current.total,
         aggregation.current.orderCount,
       ),
-      points: buildPoints(period, aggregation),
+      points: currentPoints,
+      series: { current: currentPoints, previous: previousPoints },
+      comparison,
+      tooltip: buildTooltip(period, currentPoints, previousPoints, aggregation.timezone),
     };
   }
 }
 
-function buildPoints(period: SalesPeriod, aggregation: SalesAggregation): SalesPoint[] {
-  return aggregation.buckets.map((row) => ({
-    label:
-      period === 'today'
-        ? hourLabel(row.bucket, aggregation.timezone)
-        : dayLabel(row.bucket, period),
-    start: bucketStart(row.bucket, period, aggregation.timezone),
+function buildPoints(period: SalesPeriod, buckets: SalesAggregation['buckets'], timezone: string) {
+  return buckets.map((row) => ({
+    label: period === 'today' ? hourLabel(row.bucket, timezone) : dayLabel(row.bucket, period),
+    start: bucketStart(row.bucket, period, timezone),
     sales: roundMoney(row.sales),
     orderCount: row.orderCount,
   }));
 }
 
+function buildComparison(current: number, previous: number) {
+  const difference = roundMoney(current - previous);
+  if (previous === 0) {
+    return {
+      current_total: roundMoney(current),
+      previous_total: 0,
+      difference,
+      percentage_change: current === 0 ? 0 : null,
+      status: current === 0 ? ('OK' as const) : ('NO_BASELINE' as const),
+    };
+  }
+  return {
+    current_total: roundMoney(current),
+    previous_total: roundMoney(previous),
+    difference,
+    percentage_change: roundPercentage(((current - previous) / previous) * 100),
+    status: 'OK' as const,
+  };
+}
+
+function buildTooltip(
+  period: SalesPeriod,
+  current: SalesPoint[],
+  previous: SalesPoint[],
+  timezone: string,
+): SalesComparisonPoint[] {
+  const length = Math.max(current.length, previous.length);
+  return Array.from({ length }, (_, index) => {
+    const currentPoint = current[index] ?? zeroPoint(period, previous[index], timezone);
+    const previousPoint = previous[index] ?? zeroPoint(period, current[index], timezone);
+    const comparison = buildComparison(currentPoint.sales, previousPoint.sales);
+    return {
+      timestamp: currentPoint.start,
+      label: currentPoint.label,
+      current_sales: currentPoint.sales,
+      previous_sales: previousPoint.sales,
+      difference: comparison.difference,
+      percentage_change: comparison.percentage_change,
+      current_orders_count: currentPoint.orderCount,
+      previous_orders_count: previousPoint.orderCount,
+      status: comparison.status,
+    };
+  });
+}
+
+function zeroPoint(
+  period: SalesPeriod,
+  reference: SalesPoint | undefined,
+  timezone: string,
+): SalesPoint {
+  if (!reference) {
+    return { label: '', start: new Date(0).toISOString(), sales: 0, orderCount: 0 };
+  }
+  return {
+    label: reference.label,
+    start: bucketStart(reference.start, period, timezone),
+    sales: 0,
+    orderCount: 0,
+  };
+}
+
 export function calculateTrend(current: number, previous: number): number {
-  if (previous === 0) return current;
+  if (previous === 0) return 0;
   return Math.round(((current - previous) / previous) * 100);
 }
 
@@ -69,6 +157,10 @@ export function calculateAverageTicket(total: number, orderCount: number): numbe
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function roundPercentage(value: number): number {
+  return Number(value.toFixed(2));
 }
 
 function hourLabel(bucket: string, timezone: string): string {

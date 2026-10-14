@@ -15,6 +15,7 @@ export interface SalesAggregation {
   current: SalesTotals;
   previous: SalesTotals;
   buckets: SalesBucket[];
+  previousBuckets: SalesBucket[];
   timezone: string;
 }
 

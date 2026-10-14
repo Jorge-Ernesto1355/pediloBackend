@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import type {
   SalesAggregation,
+  SalesBucket,
   SalesPeriod,
   SalesRepository,
 } from '../../application/ports/SalesRepository.js';
@@ -25,6 +26,7 @@ interface TotalRow {
 }
 
 interface BucketRow {
+  series: 'current' | 'previous';
   bucket: number | string | Date;
   sales: Prisma.Decimal | number | null;
   orderCount: bigint | number;
@@ -67,16 +69,22 @@ export class PrismaSalesRepository implements SalesRepository {
         AND o."createdAt" >= ${previous.start}
         AND o."createdAt" < ${current.end}
     `);
-    const buckets =
+    const bucketRows =
       bucket === 'hour'
         ? await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          WITH hours AS (
+          WITH current_hours AS (
             SELECT generate_series(
               ${current.start}::timestamp,
               ${current.end}::timestamp - interval '1 hour',
               interval '1 hour'
             ) AS bucket
-          ), sales AS (
+          ), previous_hours AS (
+            SELECT generate_series(
+              ${previous.start}::timestamp,
+              ${previous.end}::timestamp - interval '1 hour',
+              interval '1 hour'
+            ) AS bucket
+          ), current_sales AS (
             SELECT date_trunc(
                      'hour',
                      o."createdAt" AT TIME ZONE 'UTC',
@@ -88,20 +96,44 @@ export class PrismaSalesRepository implements SalesRepository {
             WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
               AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
             GROUP BY 1
+          ), previous_sales AS (
+            SELECT date_trunc(
+                     'hour',
+                     o."createdAt" AT TIME ZONE 'UTC',
+                     ${timezone}
+                   ) AT TIME ZONE 'UTC' AS bucket,
+                   SUM(o."total") AS sales,
+                   COUNT(*) AS "orderCount"
+            FROM "Order" o
+            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
+              AND o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}
+            GROUP BY 1
           )
-          SELECT to_char(hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
-                 COALESCE(sales.sales, 0) AS "sales",
-                 COALESCE(sales."orderCount", 0) AS "orderCount"
-          FROM hours LEFT JOIN sales USING (bucket) ORDER BY hours.bucket
+          SELECT 'current' AS "series", to_char(current_hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
+                 COALESCE(current_sales.sales, 0) AS "sales",
+                 COALESCE(current_sales."orderCount", 0) AS "orderCount"
+          FROM current_hours LEFT JOIN current_sales USING (bucket)
+          UNION ALL
+          SELECT 'previous' AS "series", to_char(previous_hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
+                 COALESCE(previous_sales.sales, 0) AS "sales",
+                 COALESCE(previous_sales."orderCount", 0) AS "orderCount"
+          FROM previous_hours LEFT JOIN previous_sales USING (bucket)
+          ORDER BY "series", "bucket"
         `)
         : await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          WITH days AS (
+          WITH current_days AS (
             SELECT generate_series(
               ${isoDate(localDate(current.start, timezone))}::timestamp,
               ${isoDate(localDate(now, timezone))}::timestamp,
               interval '1 day'
             )::date AS bucket
-          ), sales AS (
+          ), previous_days AS (
+            SELECT generate_series(
+              ${isoDate(localDate(previous.start, timezone))}::timestamp,
+              ${isoDate(localDate(previous.end, timezone))}::timestamp - interval '1 day',
+              interval '1 day'
+            )::date AS bucket
+          ), current_sales AS (
             SELECT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date AS bucket,
                    SUM(o."total") AS sales,
                    COUNT(*) AS "orderCount"
@@ -109,21 +141,39 @@ export class PrismaSalesRepository implements SalesRepository {
             WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
               AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
             GROUP BY 1
+          ), previous_sales AS (
+            SELECT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date AS bucket,
+                   SUM(o."total") AS sales,
+                   COUNT(*) AS "orderCount"
+            FROM "Order" o
+            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
+              AND o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}
+            GROUP BY 1
           )
-          SELECT to_char(days.bucket, 'YYYY-MM-DD') AS "bucket",
-                 COALESCE(sales.sales, 0) AS "sales",
-                 COALESCE(sales."orderCount", 0) AS "orderCount"
-          FROM days LEFT JOIN sales USING (bucket) ORDER BY days.bucket
+          SELECT 'current' AS "series", to_char(current_days.bucket, 'YYYY-MM-DD') AS "bucket",
+                 COALESCE(current_sales.sales, 0) AS "sales",
+                 COALESCE(current_sales."orderCount", 0) AS "orderCount"
+          FROM current_days LEFT JOIN current_sales USING (bucket)
+          UNION ALL
+          SELECT 'previous' AS "series", to_char(previous_days.bucket, 'YYYY-MM-DD') AS "bucket",
+                 COALESCE(previous_sales.sales, 0) AS "sales",
+                 COALESCE(previous_sales."orderCount", 0) AS "orderCount"
+          FROM previous_days LEFT JOIN previous_sales USING (bucket)
+          ORDER BY "series", "bucket"
         `);
     const row = totals[0];
+    const toBucket = (item: BucketRow): SalesBucket => ({
+      bucket: String(item.bucket),
+      sales: toNumber(item.sales),
+      orderCount: toNumber(item.orderCount),
+    });
+    const buckets = bucketRows.filter((item) => item.series === 'current').map(toBucket);
+    const previousBuckets = bucketRows.filter((item) => item.series === 'previous').map(toBucket);
     return {
       current: { total: toNumber(row?.currentTotal), orderCount: toNumber(row?.currentCount) },
       previous: { total: toNumber(row?.previousTotal), orderCount: toNumber(row?.previousCount) },
-      buckets: buckets.map((item) => ({
-        bucket: String(item.bucket),
-        sales: toNumber(item.sales),
-        orderCount: toNumber(item.orderCount),
-      })),
+      buckets,
+      previousBuckets,
       timezone,
     };
   }

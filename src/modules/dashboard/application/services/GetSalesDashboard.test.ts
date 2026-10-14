@@ -20,6 +20,7 @@ function aggregation(buckets: SalesAggregation['buckets'], timezone = 'UTC'): Sa
     },
     previous: { total: 200, orderCount: 2 },
     buckets,
+    previousBuckets: [],
     timezone,
   };
 }
@@ -138,10 +139,10 @@ describe('GetSalesDashboard bucket granularity', () => {
     expect(result.points[0]?.start).toBe('2026-09-30T07:00:00.000Z');
   });
 
-  it('uses the current value as numeric trend when the previous period is zero', async () => {
-    expect(calculateTrend(27, 0)).toBe(27);
-    expect(calculateTrend(6365, 0)).toBe(6365);
-    expect(calculateTrend(200, 0)).toBe(200);
+  it('uses zero trend when the previous period has no sales', async () => {
+    expect(calculateTrend(27, 0)).toBe(0);
+    expect(calculateTrend(6365, 0)).toBe(0);
+    expect(calculateTrend(200, 0)).toBe(0);
 
     const data = aggregation([{ bucket: '2026-09-29T12:00:00.000Z', sales: 6365, orderCount: 27 }]);
     data.previous = { total: 0, orderCount: 0 };
@@ -149,7 +150,7 @@ describe('GetSalesDashboard bucket granularity', () => {
     expect(result).toMatchObject({
       total: 6365,
       ordersCount: 27,
-      trend: 6365,
+      trend: 0,
     });
   });
 
@@ -159,6 +160,58 @@ describe('GetSalesDashboard bucket granularity', () => {
     expect(calculateTrend(300, 100)).toBe(200);
     expect(calculateTrend(1000, 100)).toBe(900);
     expect(calculateTrend(75, 100)).toBe(-25);
+  });
+
+  it('returns aligned current and previous series with tooltip comparison data', async () => {
+    const data = aggregation([
+      { bucket: '2026-09-29', sales: 300, orderCount: 3 },
+      { bucket: '2026-09-30', sales: 0, orderCount: 0 },
+    ]);
+    data.current = { total: 300, orderCount: 3 };
+    data.previous = { total: 100, orderCount: 1 };
+    data.previousBuckets = [
+      { bucket: '2026-09-22', sales: 100, orderCount: 1 },
+      { bucket: '2026-09-23', sales: 0, orderCount: 0 },
+    ];
+
+    const result = await execute('7d', data);
+
+    expect(result.series.current).toHaveLength(2);
+    expect(result.series.previous).toHaveLength(2);
+    expect(result.series.current[0]).toMatchObject({ sales: 300, orderCount: 3 });
+    expect(result.series.previous[0]).toMatchObject({ sales: 100, orderCount: 1 });
+    expect(result.comparison).toEqual({
+      current_total: 300,
+      previous_total: 100,
+      difference: 200,
+      percentage_change: 200,
+      status: 'OK',
+    });
+    expect(result.tooltip[0]).toMatchObject({
+      current_sales: 300,
+      previous_sales: 100,
+      difference: 200,
+      percentage_change: 200,
+      current_orders_count: 3,
+      previous_orders_count: 1,
+      status: 'OK',
+    });
+  });
+
+  it('returns NO_BASELINE for a positive current total with an empty previous period', async () => {
+    const data = aggregation([{ bucket: '2026-09-29', sales: 300, orderCount: 3 }]);
+    data.current = { total: 300, orderCount: 3 };
+    data.previous = { total: 0, orderCount: 0 };
+    data.previousBuckets = [{ bucket: '2026-09-22', sales: 0, orderCount: 0 }];
+
+    const result = await execute('7d', data);
+
+    expect(result.comparison).toMatchObject({
+      difference: 300,
+      percentage_change: null,
+      status: 'NO_BASELINE',
+    });
+    expect(result.tooltip[0]).toMatchObject({ percentage_change: null, status: 'NO_BASELINE' });
   });
 
   it('handles zero-safe trend states and declines', async () => {
