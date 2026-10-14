@@ -22,6 +22,7 @@ import { accountRouter } from './modules/Account/presentation/http/account.route
 import { trustedOrigins } from './shared/config/env.js';
 import { trustedOriginGuard } from './shared/config/security/origin-guard.js';
 import { PasswordRecoveryRateLimiter } from './modules/auth/presentation/http/passwordRecoveryRateLimiter.js';
+import { analyticsRouter } from './modules/analytics/presentation/http/analytics.routes.js';
 export function createApp() {
   const app = express();
   const betterAuthRateLimiter = new PasswordRecoveryRateLimiter();
@@ -62,6 +63,7 @@ export function createApp() {
   app.use('/api/v1/businesses', orderRouter);
   app.use('/api/v1/public', publicBusinessRouter);
   app.use('/api/v1/dashboard', salesRouter);
+  app.use('/api/v1/analytics', analyticsRouter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
