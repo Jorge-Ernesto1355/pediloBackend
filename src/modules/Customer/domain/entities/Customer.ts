@@ -6,6 +6,7 @@ export interface CustomerProps {
   createdAt: Date;
   updatedAt: Date;
   orderCount?: number;
+  totalSpent: number;
 }
 export class Customer {
   private constructor(private readonly props: CustomerProps) {}

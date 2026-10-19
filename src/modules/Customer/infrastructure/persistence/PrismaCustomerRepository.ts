@@ -38,7 +38,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
   async getById(ownerUserId: string, customerId: string): Promise<Customer | null> {
     const row = await this.prisma.customer.findFirst({
       where: { id: customerId, business: { users: { some: { id: ownerUserId } } } },
-      include: { _count: { select: { orders: true } } },
+      include: customerFinancialsInclude,
     });
     return row ? toDomain(row) : null;
   }
@@ -62,7 +62,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        include: { _count: { select: { orders: true } } },
+        include: customerFinancialsInclude,
         orderBy: { updatedAt: 'desc' },
         skip: (input.page - 1) * input.limit,
         take: input.limit,
@@ -93,7 +93,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       const row = await this.prisma.customer.update({
         where: { id: customerId },
         data: input,
-        include: { _count: { select: { orders: true } } },
+        include: customerFinancialsInclude,
       });
       return toDomain(row);
     } catch (error) {
@@ -118,6 +118,16 @@ export class PrismaCustomerRepository implements CustomerRepository {
   }
 }
 
+// CONFIRMED y COMPLETED fueron migrados a PREPARING y READY respectivamente.
+// Solo estos estados representan pedidos que cuentan como gasto del cliente.
+const customerFinancialsInclude = {
+  _count: { select: { orders: true } },
+  orders: {
+    where: { status: { in: ['PREPARING', 'READY'] } },
+    select: { total: true },
+  },
+} satisfies Prisma.CustomerInclude;
+
 function isUniqueError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
@@ -130,6 +140,7 @@ function toDomain(row: {
   createdAt: Date;
   updatedAt: Date;
   _count?: { orders: number };
+  orders?: { total: Prisma.Decimal }[];
 }): Customer {
   const props: CustomerProps = {
     id: row.id,
@@ -139,6 +150,9 @@ function toDomain(row: {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     orderCount: row._count?.orders,
+    totalSpent:
+      row.orders?.reduce((sum, order) => sum.add(order.total), new Prisma.Decimal(0)).toNumber() ??
+      0,
   };
   return Customer.create(props);
 }
