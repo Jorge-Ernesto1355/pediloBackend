@@ -134,8 +134,38 @@ model Business {
   users      User[]
   images     BusinessImage[]
 
-  businessSchedule BusinessSchedule?
-  ubicationMaps    UbicationMaps?
+  businessSchedule  BusinessSchedule?
+  ubicationMaps     UbicationMaps?
+  googleReviewLink  GoogleReviewLink?
+  googleReviewScans GoogleReviewScan[]
+}
+
+model GoogleReviewLink {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  qrCode     String   @unique @default(cuid())
+  url        String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  scans    GoogleReviewScan[]
+}
+
+model GoogleReviewScan {
+  id                 String   @id @default(cuid())
+  businessId         String
+  googleReviewLinkId String
+  visitedAt          DateTime @default(now())
+  visitorHash        String
+  dedupeBucket       DateTime
+
+  business         Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  googleReviewLink GoogleReviewLink @relation(fields: [googleReviewLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([googleReviewLinkId, visitorHash, dedupeBucket], map: "GoogleReviewScan_dedupe_key")
+  @@index([businessId, visitedAt])
+  @@index([googleReviewLinkId, visitedAt])
 }
 
 enum BusinessImageType {

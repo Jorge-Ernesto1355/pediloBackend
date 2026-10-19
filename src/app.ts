@@ -23,6 +23,10 @@ import { trustedOrigins } from './shared/config/env.js';
 import { trustedOriginGuard } from './shared/config/security/origin-guard.js';
 import { PasswordRecoveryRateLimiter } from './modules/auth/presentation/http/passwordRecoveryRateLimiter.js';
 import { analyticsRouter } from './modules/analytics/presentation/http/analytics.routes.js';
+import {
+  googleReviewRouter,
+  googleReviewTrackingRouter,
+} from './modules/GoogleReviews/presentation/http/google-review.routes.js';
 export function createApp() {
   const app = express();
   const betterAuthRateLimiter = new PasswordRecoveryRateLimiter();
@@ -49,11 +53,14 @@ export function createApp() {
   // A partir de aquí sí podemos parsear JSON para el resto de rutas.
   app.use(express.json());
 
+  app.use('/r', googleReviewTrackingRouter);
+
   // Tu API hexagonal, construida sobre los casos de uso.
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/account', accountRouter);
   // Debe ir antes de businessRouter porque ese router contiene GET /:id.
   app.use('/api/v1/businesses', businessSettingsRouter);
+  app.use('/api/v1/businesses', googleReviewRouter);
   app.use('/api/v1/businesses', businessRouter);
   app.use('/api/v1/businesses', categoryRouter);
   app.use('/api/v1/businesses', menuRouter);
