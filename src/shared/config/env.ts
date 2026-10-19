@@ -31,6 +31,7 @@ const envSchema = z
     if (values.NODE_ENV === 'production' && values.BETTER_AUTH_SECRET.length < 32) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
+
         path: ['BETTER_AUTH_SECRET'],
         message: 'BETTER_AUTH_SECRET must contain at least 32 characters in production',
       });
