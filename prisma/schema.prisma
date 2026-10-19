@@ -138,6 +138,20 @@ model Business {
   ubicationMaps     UbicationMaps?
   googleReviewLink  GoogleReviewLink?
   googleReviewScans GoogleReviewScan[]
+  storeVisits       StoreVisit[]
+}
+
+model StoreVisit {
+  id           String   @id @default(cuid())
+  businessId   String
+  visitedAt    DateTime @default(now())
+  visitorHash  String
+  dedupeBucket DateTime
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, visitorHash, dedupeBucket], map: "StoreVisit_dedupe_key")
+  @@index([businessId, visitedAt])
 }
 
 model GoogleReviewLink {

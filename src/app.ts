@@ -9,7 +9,10 @@ import { categoryRouter } from './modules/Category/presentation/http/category.ro
 import { menuRouter } from './modules/Menu/presentation/http/menu.routes.js';
 import { productRouter } from './modules/Product/presentation/http/product.routes.js';
 import { productOptionRouter } from './modules/Product/presentation/http/product-option.routes.js';
-import { publicBusinessRouter } from './modules/Business/presentation/http/public-business.routes.js';
+import {
+  publicBusinessRouter,
+  storeVisitRouter,
+} from './modules/Business/presentation/http/public-business.routes.js';
 import { auth } from './libs/auth';
 import { errorHandler } from './shared/errors/error-handler.js';
 import { customerRouter } from './modules/Customer/presentation/http/customer.routes.js';
@@ -61,6 +64,7 @@ export function createApp() {
   // Debe ir antes de businessRouter porque ese router contiene GET /:id.
   app.use('/api/v1/businesses', businessSettingsRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
+  app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', businessRouter);
   app.use('/api/v1/businesses', categoryRouter);
   app.use('/api/v1/businesses', menuRouter);
