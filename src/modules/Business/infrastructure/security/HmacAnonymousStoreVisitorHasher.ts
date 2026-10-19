@@ -4,9 +4,9 @@ import type { AnonymousStoreVisitorHasher } from '../../application/ports/Anonym
 export class HmacAnonymousStoreVisitorHasher implements AnonymousStoreVisitorHasher {
   constructor(private readonly secret: string) {}
 
-  hash(ipAddress: string, userAgent: string): string {
+  hash(ipAddress: string, _userAgent: string): string {
     return createHmac('sha256', this.secret)
-      .update(`${normalizeIp(ipAddress)}\n${userAgent.trim().slice(0, 512)}`)
+      .update(normalizeIp(ipAddress))
       .digest('hex');
   }
 }

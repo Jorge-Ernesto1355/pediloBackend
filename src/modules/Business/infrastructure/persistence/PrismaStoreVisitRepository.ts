@@ -59,8 +59,8 @@ export class PrismaStoreVisitRepository implements StoreVisitRepository {
     `);
     const bucket =
       granularity === 'hour'
-        ? Prisma.sql`to_char(v."visitedAt" AT TIME ZONE ${timezone}, 'HH24')`
-        : Prisma.sql`to_char(v."visitedAt" AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
+        ? Prisma.sql`to_char(v."visitedAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'HH24')`
+        : Prisma.sql`to_char(v."visitedAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
     const daily = await this.prisma.$queryRaw<DailyRow[]>(Prisma.sql`
       SELECT 'current' AS "period", ${bucket} AS "bucket", COUNT(*) AS "visits"
       FROM "StoreVisit" v
