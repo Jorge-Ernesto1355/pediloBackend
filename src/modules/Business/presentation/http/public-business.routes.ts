@@ -1,16 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '@/libs/prisma.js';
 import { env } from '@/shared/config/env.js';
-import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
-import { authProvider } from '@/modules/auth/presentation/http/auth.dependencies.js';
-import { GetPublicStoreVisitStats } from '../../application/useCases/GetPublicStoreVisitStats.js';
 import { RecordPublicStoreVisit } from '../../application/useCases/RecordPublicStoreVisit.js';
 import { PrismaStoreVisitRepository } from '../../infrastructure/persistence/PrismaStoreVisitRepository.js';
 import { HmacAnonymousStoreVisitorHasher } from '../../infrastructure/security/HmacAnonymousStoreVisitorHasher.js';
 import { GetPublicBusinessCatalog } from '../../application/useCases/GetPublicBusinessCatalog.js';
 import { PrismaPublicBusinessRepository } from '../../infrastructure/persistence/PrismaPublicBusinessRepository.js';
 import { PublicBusinessController } from './PublicBusinessController.js';
-import { StoreVisitStatsController } from './StoreVisitStatsController.js';
 
 const storeVisitRepository = new PrismaStoreVisitRepository(prisma);
 const controller = new PublicBusinessController(
@@ -20,13 +16,5 @@ const controller = new PublicBusinessController(
     new HmacAnonymousStoreVisitorHasher(env.BETTER_AUTH_SECRET),
   ),
 );
-const statsController = new StoreVisitStatsController(
-  new GetPublicStoreVisitStats(storeVisitRepository),
-);
-const requireAuth = createRequireAuth(authProvider);
-
 export const publicBusinessRouter = Router();
 publicBusinessRouter.get('/businesses/:slug/catalog', controller.getCatalog);
-
-export const storeVisitRouter = Router();
-storeVisitRouter.get('/store-visits/stats', requireAuth, statsController.get);
