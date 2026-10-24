@@ -26,6 +26,8 @@ const envSchema = z
     RESEND_API_KEY: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
     REQUEST_LOGGING: z.enum(['true', 'false']).default('true'),
+    SENTRY_DSN: z.string().url().optional(),
+    SENTRY_RELEASE: z.string().min(1).optional(),
   })
   .superRefine((values, context) => {
     if (values.NODE_ENV === 'production' && values.BETTER_AUTH_SECRET.length < 32) {
