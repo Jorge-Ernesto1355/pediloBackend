@@ -1,57 +1,43 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import type {
   SalesAggregation,
-  SalesBucket,
   SalesPeriod,
   SalesRepository,
 } from '../../application/ports/SalesRepository.js';
 import { AppError } from '@/shared/errors/app-error.js';
-import {
-  addDays,
-  addMonths,
-  daysInMonth,
-  getBusinessPeriodRange,
-  localDate,
-  zonedStart,
-} from '@/shared/time/business-period.js';
-import type { DateParts } from '@/shared/time/business-period.js';
+import { getBusinessPeriodRange } from '@/shared/time/business-period.js';
 
 const saleStatuses = ['PREPARING', 'READY'];
 
 interface TotalRow {
   currentTotal: Prisma.Decimal | number | null;
   currentCount: bigint | number;
-  previousTotal: Prisma.Decimal | number | null;
-  previousCount: bigint | number;
 }
 
-interface BucketRow {
-  series: 'current' | 'previous';
-  bucket: number | string | Date;
-  sales: Prisma.Decimal | number | null;
-  orderCount: bigint | number;
+interface HistoricalRow {
+  historicalTotal: Prisma.Decimal | number | null;
+  historicalCount: bigint | number;
 }
 
 export class PrismaSalesRepository implements SalesRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async aggregate(
-    ownerUserId: string,
-    period: SalesPeriod,
-    bucket: 'hour' | 'day',
-  ): Promise<SalesAggregation> {
+  async aggregate(ownerUserId: string, period: SalesPeriod): Promise<SalesAggregation> {
     const business = await this.prisma.user.findUnique({
       where: { id: ownerUserId },
       select: {
         businessId: true,
-        business: { select: { settings: { select: { timezone: true } } } },
+        business: {
+          select: {
+            settings: { select: { timezone: true } },
+          },
+        },
       },
     });
     if (!business?.businessId) throw new AppError('Business not found', 404, 'BUSINESS_NOT_FOUND');
     const timezone = business.business?.settings?.timezone || 'America/Mazatlan';
     const now = new Date();
-    const ranges = buildRanges(period, timezone, now);
-    const { current, previous } = ranges;
+    const current = getBusinessPeriodRange(period, timezone, now);
     // PostgreSQL does not implicitly compare a native enum column with text
     // parameters produced by Prisma's raw-query builder.
     const statuses = Prisma.join(
@@ -59,181 +45,40 @@ export class PrismaSalesRepository implements SalesRepository {
     );
     const totals = await this.prisma.$queryRaw<TotalRow[]>(Prisma.sql`
       SELECT
-        COALESCE(SUM(o."total") FILTER (WHERE o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}), 0) AS "previousTotal",
-        COUNT(*) FILTER (WHERE o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}) AS "previousCount",
         COALESCE(SUM(o."total") FILTER (WHERE o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}), 0) AS "currentTotal",
         COUNT(*) FILTER (WHERE o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}) AS "currentCount"
       FROM "Order" o
       WHERE o."businessId" = ${business.businessId}
         AND o."status" IN (${statuses})
-        AND o."createdAt" >= ${previous.start}
+        AND o."createdAt" >= ${current.start}
         AND o."createdAt" < ${current.end}
     `);
-    const bucketRows =
-      bucket === 'hour'
-        ? await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          WITH current_hours AS (
-            SELECT generate_series(
-              ${current.start}::timestamp,
-              ${current.end}::timestamp - interval '1 hour',
-              interval '1 hour'
-            ) AS bucket
-          ), previous_hours AS (
-            SELECT generate_series(
-              ${previous.start}::timestamp,
-              ${previous.end}::timestamp - interval '1 hour',
-              interval '1 hour'
-            ) AS bucket
-          ), current_sales AS (
-            SELECT date_trunc(
-                     'hour',
-                     o."createdAt" AT TIME ZONE 'UTC',
-                     ${timezone}
-                   ) AT TIME ZONE 'UTC' AS bucket,
-                   SUM(o."total") AS sales,
-                   COUNT(*) AS "orderCount"
-            FROM "Order" o
-            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-              AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
-            GROUP BY 1
-          ), previous_sales AS (
-            SELECT date_trunc(
-                     'hour',
-                     o."createdAt" AT TIME ZONE 'UTC',
-                     ${timezone}
-                   ) AT TIME ZONE 'UTC' AS bucket,
-                   SUM(o."total") AS sales,
-                   COUNT(*) AS "orderCount"
-            FROM "Order" o
-            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-              AND o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}
-            GROUP BY 1
-          )
-          SELECT 'current' AS "series", to_char(current_hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
-                 COALESCE(current_sales.sales, 0) AS "sales",
-                 COALESCE(current_sales."orderCount", 0) AS "orderCount"
-          FROM current_hours LEFT JOIN current_sales USING (bucket)
-          UNION ALL
-          SELECT 'previous' AS "series", to_char(previous_hours.bucket, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "bucket",
-                 COALESCE(previous_sales.sales, 0) AS "sales",
-                 COALESCE(previous_sales."orderCount", 0) AS "orderCount"
-          FROM previous_hours LEFT JOIN previous_sales USING (bucket)
-          ORDER BY "series", "bucket"
-        `)
-        : await this.prisma.$queryRaw<BucketRow[]>(Prisma.sql`
-          WITH current_days AS (
-            SELECT generate_series(
-              ${isoDate(localDate(current.start, timezone))}::timestamp,
-              ${isoDate(localDate(now, timezone))}::timestamp,
-              interval '1 day'
-            )::date AS bucket
-          ), previous_days AS (
-            SELECT generate_series(
-              ${isoDate(localDate(previous.start, timezone))}::timestamp,
-              ${isoDate(localDate(previous.end, timezone))}::timestamp - interval '1 day',
-              interval '1 day'
-            )::date AS bucket
-          ), current_sales AS (
-            SELECT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date AS bucket,
-                   SUM(o."total") AS sales,
-                   COUNT(*) AS "orderCount"
-            FROM "Order" o
-            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-              AND o."createdAt" >= ${current.start} AND o."createdAt" < ${current.end}
-            GROUP BY 1
-          ), previous_sales AS (
-            SELECT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date AS bucket,
-                   SUM(o."total") AS sales,
-                   COUNT(*) AS "orderCount"
-            FROM "Order" o
-            WHERE o."businessId" = ${business.businessId} AND o."status" IN (${statuses})
-              AND o."createdAt" >= ${previous.start} AND o."createdAt" < ${previous.end}
-            GROUP BY 1
-          )
-          SELECT 'current' AS "series", to_char(current_days.bucket, 'YYYY-MM-DD') AS "bucket",
-                 COALESCE(current_sales.sales, 0) AS "sales",
-                 COALESCE(current_sales."orderCount", 0) AS "orderCount"
-          FROM current_days LEFT JOIN current_sales USING (bucket)
-          UNION ALL
-          SELECT 'previous' AS "series", to_char(previous_days.bucket, 'YYYY-MM-DD') AS "bucket",
-                 COALESCE(previous_sales.sales, 0) AS "sales",
-                 COALESCE(previous_sales."orderCount", 0) AS "orderCount"
-          FROM previous_days LEFT JOIN previous_sales USING (bucket)
-          ORDER BY "series", "bucket"
-        `);
+    const historical = await this.prisma.$queryRaw<HistoricalRow[]>(Prisma.sql`
+      WITH historical_orders AS MATERIALIZED (
+        SELECT DISTINCT ON (duplicate_check."businessId", duplicate_check."orderNumber")
+          duplicate_check."total", duplicate_check."id"
+        FROM "Order" duplicate_check
+        WHERE duplicate_check."businessId" = ${business.businessId}
+          AND duplicate_check."status" IN (${statuses})
+          AND duplicate_check."createdAt" < ${now}
+        ORDER BY duplicate_check."businessId", duplicate_check."orderNumber", duplicate_check."createdAt" DESC, duplicate_check."id" DESC
+      )
+      SELECT
+        COALESCE(SUM("total"), 0) AS "historicalTotal",
+        COUNT(*) AS "historicalCount"
+      FROM historical_orders
+    `);
     const row = totals[0];
-    const toBucket = (item: BucketRow): SalesBucket => ({
-      bucket: String(item.bucket),
-      sales: toNumber(item.sales),
-      orderCount: toNumber(item.orderCount),
-    });
-    const buckets = bucketRows.filter((item) => item.series === 'current').map(toBucket);
-    const previousBuckets = bucketRows.filter((item) => item.series === 'previous').map(toBucket);
+    const historicalRow = historical[0];
     return {
       current: { total: toNumber(row?.currentTotal), orderCount: toNumber(row?.currentCount) },
-      previous: { total: toNumber(row?.previousTotal), orderCount: toNumber(row?.previousCount) },
-      buckets,
-      previousBuckets,
+      historical: {
+        total: toNumber(historicalRow?.historicalTotal),
+        orderCount: toNumber(historicalRow?.historicalCount),
+      },
       timezone,
     };
   }
-}
-
-interface Range {
-  start: Date;
-  end: Date;
-}
-
-function buildRanges(
-  period: SalesPeriod,
-  timezone: string,
-  now: Date,
-): { current: Range; previous: Range } {
-  const today = localDate(now, timezone);
-  if (period === 'today') {
-    return {
-      current: getBusinessPeriodRange('today', timezone, now),
-      previous: {
-        start: zonedStart(addDays(today, -1), timezone),
-        end: zonedStart(today, timezone),
-      },
-    };
-  }
-  if (period === '7d') {
-    return {
-      current: getBusinessPeriodRange('7d', timezone, now),
-      previous: {
-        start: zonedStart(addDays(today, -13), timezone),
-        end: zonedStart(addDays(today, -6), timezone),
-      },
-    };
-  }
-  if (period === '30d') {
-    return {
-      current: getBusinessPeriodRange('30d', timezone, now),
-      previous: {
-        start: zonedStart(addDays(today, -59), timezone),
-        end: zonedStart(addDays(today, -29), timezone),
-      },
-    };
-  }
-  const monthStart = { year: today.year, month: today.month, day: 1 };
-  const previousMonth = addMonths(monthStart, -1);
-  const previousEnd = addDays(
-    previousMonth,
-    Math.min(today.day, daysInMonth(previousMonth.year, previousMonth.month)),
-  );
-  return {
-    current: getBusinessPeriodRange('thisMonth', timezone, now),
-    previous: {
-      start: zonedStart(previousMonth, timezone),
-      end: zonedStart(previousEnd, timezone),
-    },
-  };
-}
-
-function isoDate(parts: DateParts): string {
-  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
 function toNumber(value: Prisma.Decimal | number | bigint | null | undefined): number {
