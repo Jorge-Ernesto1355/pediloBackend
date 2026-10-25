@@ -26,10 +26,7 @@ export class OrderController {
     const body = createOrderSchema.safeParse(req.body);
     if (!params.success) return bad(res, params.error);
     if (!body.success) return bad(res, body.error);
-    return this.createOrder
-      .execute(params.data.businessId, body.data)
-      .then((order) => res.status(201).json({ order: order.toJSON() }))
-      .catch((error) => handle(res, error));
+    throw new Error('Not implemented yet');
   };
   createRestaurant = (req: Request, res: Response) => {
     const params = businessIdSchema.safeParse(req.params);
