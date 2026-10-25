@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import * as Sentry from '@sentry/node';
 import { toNodeHandler } from 'better-auth/node';
 
 import { authRouter } from './modules/auth/presentation/http/auht.routes';
@@ -75,7 +74,6 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-  Sentry.setupExpressErrorHandler(app);
   app.use(requestLoggerErrorHandler);
   app.use(errorHandler);
 
