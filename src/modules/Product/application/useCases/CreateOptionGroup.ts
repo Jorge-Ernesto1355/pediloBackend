@@ -12,7 +12,7 @@ export class CreateOptionGroup {
   ): Promise<ProductOptionGroupProps> {
     const input = {
       isRequired: dto.isRequired ?? false,
-      minSelections: dto.minSelections ?? 0,
+      minSelections: dto.minSelections ?? (dto.isRequired ? 1 : 0),
       maxSelections: dto.maxSelections ?? 1,
     };
     assertOptionGroupConfiguration(input);
@@ -25,6 +25,8 @@ export class CreateOptionGroup {
       options: (dto.options ?? []).map((option) => ({
         name: option.name,
         price: option.price ?? 0,
+        minSelections: option.minSelections ?? 0,
+        maxSelections: option.maxSelections ?? 1,
         isAvailable: option.isAvailable ?? true,
       })),
     });

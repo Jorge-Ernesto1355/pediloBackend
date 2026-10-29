@@ -5,6 +5,8 @@ export interface ProductOptionProps {
   optionGroupId: string;
   name: string;
   price: number;
+  minSelections: number;
+  maxSelections: number;
   isAvailable: boolean;
   sortOrder: number;
   createdAt: Date;

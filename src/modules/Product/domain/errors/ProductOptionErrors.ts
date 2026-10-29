@@ -72,6 +72,14 @@ export class InvalidOptionPriceError extends ProductOptionError {
   }
 }
 
+export class InvalidOptionSelectionConfigurationError extends ProductOptionError {
+  readonly httpStatus = 400;
+  readonly code = 'INVALID_OPTION_SELECTION_CONFIGURATION';
+  constructor() {
+    super('Option selection configuration is invalid');
+  }
+}
+
 export class SameOptionGroupError extends ProductOptionError {
   readonly httpStatus = 400;
   readonly code = 'OPTION_GROUP_SAME_PRODUCT';

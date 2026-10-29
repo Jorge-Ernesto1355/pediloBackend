@@ -12,6 +12,8 @@ export interface MenuProductOption {
   optionGroupId: string;
   name: string;
   price: number;
+  minSelections: number;
+  maxSelections: number;
   isAvailable: boolean;
   sortOrder: number;
   createdAt: Date;

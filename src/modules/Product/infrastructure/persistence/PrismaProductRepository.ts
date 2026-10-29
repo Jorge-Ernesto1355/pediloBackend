@@ -28,6 +28,7 @@ import {
   ProductManagementRepository,
   ProductStatistics,
 } from '../../application/ports/ProductManagementRepository.js';
+import { resolveProductImageUrl } from '@/shared/images/product-image.js';
 
 const productSelect = {
   id: true,
@@ -63,6 +64,8 @@ const productSelect = {
           optionGroupId: true,
           name: true,
           price: true,
+          minSelections: true,
+          maxSelections: true,
           isAvailable: true,
           sortOrder: true,
           createdAt: true,
@@ -101,7 +104,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
         select: productSelect,
       });
     });
-    return toDomain(row);
+    return await toDomain(row);
   }
 
   async getById(ownerUserId: string, productId: string): Promise<Product | null> {
@@ -115,7 +118,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
       where: { id: productId },
       select: productSelect,
     });
-    return row ? toDomain(row) : null;
+    return row ? await toDomain(row) : null;
   }
 
   async list(ownerUserId: string, filters: ProductListFilters): Promise<Product[]> {
@@ -131,7 +134,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: productSelect,
     });
-    return rows.map(toDomain);
+    return Promise.all(rows.map(toDomain));
   }
 
   async listAdmin(
@@ -150,7 +153,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
       }),
       this.prisma.product.count({ where }),
     ]);
-    return { products: rows.map(toDomain), total };
+    return { products: await Promise.all(rows.map(toDomain)), total };
   }
 
   async stats(ownerUserId: string, businessId: string): Promise<ProductStatistics> {
@@ -279,7 +282,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
           data: fields,
           select: productSelect,
         });
-        return toDomain(row);
+        return await toDomain(row);
       }
 
       const products = await transaction.product.findMany({
@@ -299,7 +302,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
         where: { id: productId },
         select: productSelect,
       });
-      return toDomain(row);
+      return await toDomain(row);
     });
   }
 
@@ -334,7 +337,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
       data: { isAvailable },
       select: productSelect,
     });
-    return toDomain(row);
+    return await toDomain(row);
   }
 
   async moveToCategory(
@@ -375,7 +378,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
         where: { id: product.id },
         select: productSelect,
       });
-      return toDomain(row);
+      return await toDomain(row);
     });
   }
 
@@ -408,7 +411,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
         select: productSelect,
       });
-      return rows.map(toDomain);
+      return Promise.all(rows.map(toDomain));
     });
   }
 
@@ -493,7 +496,7 @@ async function normalizeCategoryOrder(
     await transaction.product.update({ where: { id: product.id }, data: { sortOrder } });
 }
 
-function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }>): Product {
+async function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }>): Promise<Product> {
   const props: ProductProps = {
     id: row.id,
     businessId: row.businessId,
@@ -507,7 +510,7 @@ function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }
     name: row.name,
     description: row.description,
     price: row.price.toNumber(),
-    imageUrl: row.imageUrl,
+    imageUrl: await resolveProductImageUrl(row.imageUrl),
     imageBlurUrl: row.imageBlurUrl,
     sortOrder: row.sortOrder,
     isAvailable: row.isAvailable,
@@ -529,6 +532,8 @@ function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }
         optionGroupId: option.optionGroupId,
         name: option.name,
         price: option.price.toNumber(),
+        minSelections: option.minSelections,
+        maxSelections: option.maxSelections,
         isAvailable: option.isAvailable,
         sortOrder: option.sortOrder,
         createdAt: option.createdAt,

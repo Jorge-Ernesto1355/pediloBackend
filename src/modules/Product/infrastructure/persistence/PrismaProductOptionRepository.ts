@@ -1,6 +1,9 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { assertOptionGroupConfiguration } from '../../domain/entities/ProductOptionGroup.js';
-import { assertOptionPrice } from '../../domain/entities/ProductOption.js';
+import {
+  assertOptionPrice,
+  assertOptionSelectionConfiguration,
+} from '../../domain/entities/ProductOption.js';
 import { ProductOptionGroupProps, ProductOptionProps } from '../../domain/entities/Product.js';
 import {
   InvalidOptionGroupOrderError,
@@ -21,6 +24,8 @@ const optionSelect = {
   optionGroupId: true,
   name: true,
   price: true,
+  minSelections: true,
+  maxSelections: true,
   isAvailable: true,
   sortOrder: true,
   createdAt: true,
@@ -46,7 +51,13 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
   async createGroup(input: CreateOptionGroupRepositoryInput): Promise<ProductOptionGroupProps> {
     assertOptionGroupConfiguration(input);
     await this.assertProduct(input.ownerUserId, input.productId);
-    for (const option of input.options) assertOptionPrice(option.price);
+    for (const option of input.options) {
+      assertOptionPrice(option.price);
+      assertOptionSelectionConfiguration({
+        minSelections: option.minSelections ?? 0,
+        maxSelections: option.maxSelections ?? 1,
+      });
+    }
     const row = await this.prisma.$transaction(async (transaction) => {
       const aggregate = await transaction.productOptionGroup.aggregate({
         where: { productId: input.productId },
@@ -70,6 +81,8 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
             optionGroupId: group.id,
             name: option.name,
             price: option.price,
+            minSelections: option.minSelections ?? 0,
+            maxSelections: option.maxSelections ?? 1,
             isAvailable: option.isAvailable,
             sortOrder,
           },
@@ -115,14 +128,17 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
       select: { isRequired: true, minSelections: true, maxSelections: true },
     });
     if (!existing) return null;
+    const isRequired = input.isRequired ?? existing.isRequired;
+    const minSelections =
+      input.minSelections ?? (isRequired && existing.minSelections < 1 ? 1 : existing.minSelections);
     assertOptionGroupConfiguration({
-      isRequired: input.isRequired ?? existing.isRequired,
-      minSelections: input.minSelections ?? existing.minSelections,
+      isRequired,
+      minSelections,
       maxSelections: input.maxSelections ?? existing.maxSelections,
     });
     const row = await this.prisma.productOptionGroup.update({
       where: { id: groupId },
-      data: input,
+      data: { ...input, ...(input.isRequired === true ? { minSelections } : {}) },
       select: groupSelect,
     });
     return toGroup(row);
@@ -191,6 +207,10 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
     input: CreateOptionRepositoryInput,
   ): Promise<ProductOptionProps> {
     assertOptionPrice(input.price);
+    assertOptionSelectionConfiguration({
+      minSelections: input.minSelections ?? 0,
+      maxSelections: input.maxSelections ?? 1,
+    });
     const group = await this.assertGroup(ownerUserId, groupId);
     const row = await this.prisma.$transaction(async (transaction) => {
       const aggregate = await transaction.productOption.aggregate({
@@ -202,6 +222,8 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
           optionGroupId: group.id,
           name: input.name,
           price: input.price,
+          minSelections: input.minSelections ?? 0,
+          maxSelections: input.maxSelections ?? 1,
           isAvailable: input.isAvailable,
           sortOrder: (aggregate._max.sortOrder ?? -1) + 1,
         },
@@ -242,10 +264,14 @@ export class PrismaProductOptionRepository implements ProductOptionRepository {
         id: optionId,
         optionGroup: { product: { business: { users: { some: { id: ownerUserId } } } } },
       },
-      select: { id: true },
+      select: { id: true, minSelections: true, maxSelections: true },
     });
     if (!existing) return null;
     if (input.price !== undefined) assertOptionPrice(input.price);
+    assertOptionSelectionConfiguration({
+      minSelections: input.minSelections ?? existing.minSelections,
+      maxSelections: input.maxSelections ?? existing.maxSelections,
+    });
     const row = await this.prisma.productOption.update({
       where: { id: optionId },
       data: input,
@@ -369,6 +395,8 @@ function toOption(
     optionGroupId: row.optionGroupId,
     name: row.name,
     price: row.price.toNumber(),
+    minSelections: row.minSelections,
+    maxSelections: row.maxSelections,
     isAvailable: row.isAvailable,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt,

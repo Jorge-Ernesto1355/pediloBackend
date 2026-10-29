@@ -21,6 +21,21 @@ npm run dev
 
 Configura `DATABASE_URL` en `.env` con la conexión de PostgreSQL. El esquema Prisma está intencionalmente vacío.
 
+La aplicación usa `PEDILO_ENV` para separar el entorno lógico de `NODE_ENV`:
+
+```env
+# local | development | production
+PEDILO_ENV=local
+FRONTEND_URL=http://localhost:3000
+BETTER_AUTH_BASE_URL=http://localhost:3001
+```
+
+En Render, el servicio de desarrollo debe usar `PEDILO_ENV=development`,
+`FRONTEND_URL=https://dev.pedilo.mx`, `BETTER_AUTH_BASE_URL=https://api-dev.pedilo.mx`
+y su propia `DATABASE_URL`. Producción usa `PEDILO_ENV=production`,
+`FRONTEND_URL=https://pedilo.mx`, `BETTER_AUTH_BASE_URL=https://api.pedilo.mx`
+y su propia `DATABASE_URL`.
+
 ## Scripts
 
 - `npm run dev`: servidor en modo watch.

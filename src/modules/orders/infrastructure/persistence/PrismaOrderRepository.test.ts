@@ -207,6 +207,30 @@ describe('PrismaOrderRepository order search', () => {
     expect(findMany.mock.calls[0]![0].where.OR).toContainEqual({ orderNumber: 1024 });
   });
 
+  it('searches a phone suffix without sending it as an out-of-range order number', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    const prisma = {
+      user: { findUnique: vi.fn().mockResolvedValue({ businessId: 'business-1' }) },
+      order: { findMany, count },
+      $queryRaw: queryRaw,
+      $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
+    } as unknown as PrismaClient;
+
+    await new PrismaOrderRepository(prisma).list('user-1', {
+      businessId: 'business-1',
+      search: '6981119319',
+      page: 1,
+      limit: 20,
+    });
+
+    const where = findMany.mock.calls[0]![0].where;
+    expect(queryRaw).toHaveBeenCalledOnce();
+    expect(where.OR).not.toContainEqual({ orderNumber: 6981119319 });
+    expect(where.OR).toContainEqual({ customerPhone: { contains: '6981119319' } });
+  });
+
   it.each([10, 9, 29])(
     'filters globally before pagination when searching for order #%s',
     async (orderNumber) => {
@@ -225,9 +249,11 @@ describe('PrismaOrderRepository order search', () => {
         search: String(orderNumber),
       });
 
-      expect(result.orders).toHaveLength(1);
-      expect(result.orders[0]?.toJSON().orderNumber).toBe(orderNumber);
-      expect(result.total).toBe(1);
+      const expectedOrderNumbers = orderNumber === 9 ? [29, 19, 9] : [orderNumber];
+      expect(result.orders.map((order) => order.toJSON().orderNumber)).toEqual(
+        expectedOrderNumbers,
+      );
+      expect(result.total).toBe(expectedOrderNumbers.length);
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 20, orderBy: { createdAt: 'desc' } }),
       );
@@ -476,8 +502,12 @@ function matchesWhere(row: ListRow, where: Prisma.OrderWhereInput): boolean {
         : false;
     }
     if ('customerPhone' in condition && condition.customerPhone) {
-      const value = condition.customerPhone as { contains?: string };
-      return value.contains ? row.customerPhone?.includes(value.contains) : false;
+      const value = condition.customerPhone as { contains?: string; endsWith?: string };
+      return value.contains
+        ? row.customerPhone?.includes(value.contains)
+        : value.endsWith
+          ? row.customerPhone?.endsWith(value.endsWith)
+          : false;
     }
     return false;
   });

@@ -22,9 +22,15 @@ export const createOptionSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     price: optionPriceSchema.optional(),
+    minSelections: z.number().int().min(0).max(100).optional(),
+    maxSelections: z.number().int().min(0).max(100).optional(),
     isAvailable: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => (value.maxSelections ?? 1) >= (value.minSelections ?? 0),
+    'maxSelections must be greater than or equal to minSelections',
+  );
 
 export const createOptionGroupSchema = z
   .object({
@@ -53,9 +59,18 @@ export const updateOptionSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     price: optionPriceSchema.optional(),
+    minSelections: z.number().int().min(0).max(100).optional(),
+    maxSelections: z.number().int().min(0).max(100).optional(),
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required');
+  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+  .refine(
+    (value) =>
+      value.minSelections === undefined ||
+      value.maxSelections === undefined ||
+      value.maxSelections >= value.minSelections,
+    'maxSelections must be greater than or equal to minSelections',
+  );
 
 export const groupStatusSchema = z.object({ isActive: z.boolean() }).strict();
 export const optionStatusSchema = z.object({ isAvailable: z.boolean() }).strict();
@@ -70,7 +85,7 @@ function validateSelectionConfiguration(
   value: { isRequired?: boolean; minSelections?: number; maxSelections?: number },
   context: z.RefinementCtx,
 ) {
-  const min = value.minSelections ?? 0;
+  const min = value.minSelections ?? (value.isRequired === true ? 1 : 0);
   const max = value.maxSelections ?? 1;
   if (max < min)
     context.addIssue({

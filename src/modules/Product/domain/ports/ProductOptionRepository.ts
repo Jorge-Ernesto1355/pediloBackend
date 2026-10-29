@@ -14,6 +14,8 @@ export interface CreateOptionGroupRepositoryInput {
 export interface CreateOptionRepositoryInput {
   name: string;
   price: number;
+  minSelections?: number;
+  maxSelections?: number;
   isAvailable: boolean;
 }
 
@@ -28,6 +30,8 @@ export interface UpdateOptionGroupRepositoryInput {
 export interface UpdateOptionRepositoryInput {
   name?: string;
   price?: number;
+  minSelections?: number;
+  maxSelections?: number;
 }
 
 export interface ProductOptionRepository {

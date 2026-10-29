@@ -11,9 +11,9 @@ const itemSchema = z
   .strict();
 export const createOrderSchema = z
   .object({
-    customer: z.object({ name: z.string().trim().min(1).max(120), phone: phoneSchema }).strict(),
+    customer: z.object({ name: z.string().trim().min(1).max(20), phone: phoneSchema }).strict(),
     items: z.array(itemSchema).min(1).max(100),
-    notes: z.string().trim().max(1000).nullable().optional(),
+    notes: z.string().trim().max(200).nullable().optional(),
   })
   .strict();
 export const createRestaurantOrderSchema = z
@@ -21,7 +21,7 @@ export const createRestaurantOrderSchema = z
     customerName: z.string().trim().min(1).max(120).nullable().optional(),
     customerPhone: phoneSchema.nullable().optional(),
     items: z.array(itemSchema).min(1).max(100),
-    notes: z.string().trim().max(1000).nullable().optional(),
+    notes: z.string().trim().max(200).nullable().optional(),
   })
   .strict();
 export const orderStatusSchema = z

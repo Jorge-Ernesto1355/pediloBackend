@@ -3,6 +3,7 @@ import {
   PublicBusinessCatalog,
   PublicBusinessRepository,
 } from '../../application/ports/PublicBusinessRepository.js';
+import { resolveProductImageUrl } from '@/shared/images/product-image.js';
 
 const catalogInclude = {
   businessSchedule: true,
@@ -86,7 +87,7 @@ console.log("slug", slug)
             }
           : null,
       },
-      menus: row.menus.map((menu) => ({
+      menus: await Promise.all(row.menus.map(async (menu) => ({
         id: menu.id,
         businessId: menu.businessId,
         name: menu.name,
@@ -94,7 +95,7 @@ console.log("slug", slug)
         isActive: menu.isActive,
         createdAt: menu.createdAt,
         updatedAt: menu.updatedAt,
-        categories: menu.categories.map((category) => ({
+        categories: await Promise.all(menu.categories.map(async (category) => ({
           id: category.id,
           businessId: category.businessId,
           menuId: category.menuId,
@@ -104,14 +105,14 @@ console.log("slug", slug)
           isActive: category.isActive,
           createdAt: category.createdAt,
           updatedAt: category.updatedAt,
-          products: category.products.map((product) => ({
+          products: await Promise.all(category.products.map(async (product) => ({
             id: product.id,
             businessId: product.businessId,
             categoryId: product.categoryId,
             name: product.name,
             description: product.description,
             price: product.price.toNumber(),
-            imageUrl: product.imageUrl,
+            imageUrl: await resolveProductImageUrl(product.imageUrl),
             sortOrder: product.sortOrder,
             isAvailable: product.isAvailable,
             createdAt: product.createdAt,
@@ -132,15 +133,17 @@ console.log("slug", slug)
                 optionGroupId: option.optionGroupId,
                 name: option.name,
                 price: option.price.toNumber(),
+                minSelections: option.minSelections,
+                maxSelections: option.maxSelections,
                 sortOrder: option.sortOrder,
                 isAvailable: option.isAvailable,
                 createdAt: option.createdAt,
                 updatedAt: option.updatedAt,
               })),
             })),
-          })),
-        })),
-      })),
+          }))),
+        }))),
+      }))),
     };
   }
 }

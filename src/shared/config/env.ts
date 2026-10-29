@@ -3,8 +3,11 @@ import { z } from 'zod';
 
 const envSchema = z
   .object({
+    // Logical Pedilo environment. NODE_ENV is the runtime mode and is not
+    // sufficient on Render/Vercel, where Development also runs in production mode.
+    PEDILO_ENV: z.enum(['local', 'development', 'production']).default('local'),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    PORT: z.coerce.number().int().positive().default(3000),
+    PORT: z.coerce.number().int().positive().default(3001),
     DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(1),
     BETTER_AUTH_BASE_URL: z.string().url().optional(),
@@ -14,7 +17,7 @@ const envSchema = z
     CLOUDINARY_CLOUD_NAME: z.string().optional(),
     CLOUDINARY_API_KEY: z.string().optional(),
     CLOUDINARY_API_SECRET: z.string().optional(),
-    FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+    FRONTEND_URL: z.string().url().optional(),
     APP_NAME: z.string().min(1).default('Pedilo'),
     PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES: z.coerce.number().int().min(5).max(120).default(30),
     EMAIL_VERIFICATION_TOKEN_EXPIRATION_MINUTES: z.coerce
@@ -45,7 +48,37 @@ const envSchema = z
         message: 'Google OAuth requires both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',
       });
     }
-    if (values.NODE_ENV === 'production' && !values.FRONTEND_URL.startsWith('https://')) {
+    const expectedFrontendUrl = {
+      local: 'http://localhost:3000',
+      development: 'https://dev.pedilo.mx',
+      production: 'https://pedilo.mx',
+    }[values.PEDILO_ENV];
+    const expectedBackendUrl = {
+      local: `http://localhost:${values.PORT}`,
+      development: 'https://api-dev.pedilo.mx',
+      production: 'https://api.pedilo.mx',
+    }[values.PEDILO_ENV];
+    if (values.FRONTEND_URL && values.FRONTEND_URL.replace(/\/$/, '') !== expectedFrontendUrl) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['FRONTEND_URL'],
+        message: `FRONTEND_URL debe ser ${expectedFrontendUrl} para PEDILO_ENV=${values.PEDILO_ENV}`,
+      });
+    }
+    if (values.BETTER_AUTH_BASE_URL) {
+      const configuredBackendOrigin = new URL(values.BETTER_AUTH_BASE_URL).origin;
+      if (configuredBackendOrigin !== new URL(expectedBackendUrl).origin) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['BETTER_AUTH_BASE_URL'],
+          message: `BETTER_AUTH_BASE_URL debe ser ${expectedBackendUrl} para PEDILO_ENV=${values.PEDILO_ENV}`,
+        });
+      }
+    }
+    if (
+      values.NODE_ENV === 'production' &&
+      !(values.FRONTEND_URL ?? expectedFrontendUrl).startsWith('https://')
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['FRONTEND_URL'],
@@ -71,8 +104,20 @@ const envSchema = z
 
 export const env = envSchema.parse(process.env);
 
-const defaultBaseUrl =
-  env.NODE_ENV === 'production' ? 'https://api.pedilo.mx' : `http://localhost:${env.PORT}`;
+const defaultFrontendUrls = {
+  local: 'http://localhost:3000',
+  development: 'https://dev.pedilo.mx',
+  production: 'https://pedilo.mx',
+} as const;
+
+const defaultBackendUrls = {
+  local: `http://localhost:${env.PORT}`,
+  development: 'https://api-dev.pedilo.mx',
+  production: 'https://api.pedilo.mx',
+} as const;
+
+export const frontendUrl = env.FRONTEND_URL ?? defaultFrontendUrls[env.PEDILO_ENV];
+const defaultBaseUrl = defaultBackendUrls[env.PEDILO_ENV];
 
 export const authBaseUrl = env.BETTER_AUTH_BASE_URL ?? defaultBaseUrl;
 
@@ -85,5 +130,5 @@ export const trustedOrigins =
   configuredTrustedOrigins.length > 0
     ? configuredTrustedOrigins
     : env.NODE_ENV === 'production'
-      ? [env.FRONTEND_URL]
-      : [env.FRONTEND_URL, 'http://localhost:3001'];
+      ? [frontendUrl]
+      : [frontendUrl, 'http://localhost:3001'];

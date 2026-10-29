@@ -16,6 +16,7 @@ import {
   MenuRepository,
   UpdateMenuRepositoryInput,
 } from '../../domain/ports/MenuRepository.js';
+import { resolveProductImageUrl } from '@/shared/images/product-image.js';
 
 const menuInclude = {
   categories: {
@@ -68,7 +69,7 @@ export class PrismaMenuRepository implements MenuRepository {
       return transaction.menu.findUniqueOrThrow({ where: { id: menu.id }, include: menuInclude });
     });
 
-    return toDomain(row);
+    return await toDomain(row);
   }
 
   async getById(ownerUserId: string, id: string): Promise<Menu | null> {
@@ -76,7 +77,7 @@ export class PrismaMenuRepository implements MenuRepository {
       where: { id, business: { users: { some: { id: ownerUserId } } } },
       include: menuInclude,
     });
-    return row ? toDomain(row) : null;
+    return row ? await toDomain(row) : null;
   }
 
   async list(ownerUserId: string, businessId?: string): Promise<Menu[]> {
@@ -86,7 +87,7 @@ export class PrismaMenuRepository implements MenuRepository {
       orderBy: { createdAt: 'asc' },
       include: menuInclude,
     });
-    return rows.map(toDomain);
+    return Promise.all(rows.map(toDomain));
   }
 
   async update(
@@ -105,7 +106,7 @@ export class PrismaMenuRepository implements MenuRepository {
       data: input,
       include: menuInclude,
     });
-    return toDomain(row);
+    return await toDomain(row);
   }
 
   async delete(ownerUserId: string, id: string): Promise<boolean> {
@@ -139,7 +140,7 @@ export class PrismaMenuRepository implements MenuRepository {
       data: { isActive },
       include: menuInclude,
     });
-    return toDomain(row);
+    return await toDomain(row);
   }
 
   private async assertBusinessAccess(ownerUserId: string, businessId: string): Promise<void> {
@@ -152,21 +153,21 @@ export class PrismaMenuRepository implements MenuRepository {
   }
 }
 
-function toDomain(row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>): Menu {
-  const categories: MenuCategorySummary[] = row.categories.map((category) => ({
+async function toDomain(row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>): Promise<Menu> {
+  const categories: MenuCategorySummary[] = await Promise.all(row.categories.map(async (category) => ({
     id: category.id,
     name: category.name,
     description: category.description,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
-    products: category.products.map((product): MenuProduct => ({
+    products: await Promise.all(category.products.map(async (product): Promise<MenuProduct> => ({
       id: product.id,
       businessId: product.businessId,
       categoryId: product.categoryId,
       name: product.name,
       description: product.description,
       price: product.price.toNumber(),
-      imageUrl: product.imageUrl,
+      imageUrl: await resolveProductImageUrl(product.imageUrl),
       imageBlurUrl: product.imageBlurUrl,
       sortOrder: product.sortOrder,
       isAvailable: product.isAvailable,
@@ -188,14 +189,16 @@ function toDomain(row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>): 
           optionGroupId: option.optionGroupId,
           name: option.name,
           price: option.price.toNumber(),
+          minSelections: option.minSelections,
+          maxSelections: option.maxSelections,
           isAvailable: option.isAvailable,
           sortOrder: option.sortOrder,
           createdAt: option.createdAt,
           updatedAt: option.updatedAt,
         })),
       })),
-    })),
-  }));
+    }))),
+  })));
 
   const props: MenuProps = {
     id: row.id,

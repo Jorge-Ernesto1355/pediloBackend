@@ -1,6 +1,8 @@
 export interface CreateOptionDTO {
   name: string;
   price?: number;
+  minSelections?: number;
+  maxSelections?: number;
   isAvailable?: boolean;
 }
 
@@ -24,4 +26,6 @@ export interface UpdateOptionGroupDTO {
 export interface UpdateOptionDTO {
   name?: string;
   price?: number;
+  minSelections?: number;
+  maxSelections?: number;
 }

@@ -13,6 +13,8 @@ export interface SignUpInput {
   email: string;
   password: string;
   name: string;
+  acceptLegalDocuments: true;
+  ageDeclaration: true;
 }
 
 export interface SignInInput {

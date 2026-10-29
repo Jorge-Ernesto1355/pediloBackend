@@ -38,11 +38,19 @@ describe('BetterAuthProvider signup session', () => {
       name: 'User B',
       email: 'b@example.test',
       password: 'Strong-pass-123',
+      acceptLegalDocuments: true,
+      ageDeclaration: true,
     });
 
     expect(signUpEmail).toHaveBeenCalledOnce();
     expect(signUpEmail).toHaveBeenCalledWith({
-      body: { name: 'User B', email: 'b@example.test', password: 'Strong-pass-123' },
+      body: {
+        name: 'User B',
+        email: 'b@example.test',
+        password: 'Strong-pass-123',
+        acceptLegalDocuments: true,
+        ageDeclaration: true,
+      },
       asResponse: true,
     });
     expect(result.user.toJSON()).toMatchObject({ id: 'user-b', email: 'b@example.test' });
@@ -67,6 +75,8 @@ describe('BetterAuthProvider signup session', () => {
         name: 'Existing User',
         email: 'existing@example.test',
         password: 'Strong-pass-123',
+        acceptLegalDocuments: true,
+        ageDeclaration: true,
       }),
     ).rejects.toBeInstanceOf(EmailAlreadyExistsError);
   });
@@ -88,11 +98,19 @@ describe('BetterAuthProvider signup session', () => {
       );
     const provider = providerWith(signUpEmail);
 
-    await provider.signUp({ name: 'User A', email: 'a@example.test', password: 'Strong-pass-123' });
+    await provider.signUp({
+      name: 'User A',
+      email: 'a@example.test',
+      password: 'Strong-pass-123',
+      acceptLegalDocuments: true,
+      ageDeclaration: true,
+    });
     const result = await provider.signUp({
       name: 'User B',
       email: 'b@example.test',
       password: 'Strong-pass-123',
+      acceptLegalDocuments: true,
+      ageDeclaration: true,
     });
 
     expect(result.user.toJSON()).toMatchObject({ id: 'user-b', email: 'b@example.test' });

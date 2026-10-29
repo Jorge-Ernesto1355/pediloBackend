@@ -16,11 +16,15 @@ import {
 } from '../../domain/errors/OrderErrors.js';
 import { normalizePhone } from '@/shared/validation/phone.js';
 import { getBusinessPeriodRange } from '@/shared/time/business-period.js';
+import { resolveProductImageUrl } from '@/shared/images/product-image.js';
 
 const orderInclude = {
   items: {
     orderBy: { id: 'asc' as const },
-    include: { options: { orderBy: { id: 'asc' as const } } },
+    include: {
+      options: { orderBy: { id: 'asc' as const } },
+      product: { select: { imageUrl: true } },
+    },
   },
   statusHistory: { orderBy: { createdAt: 'asc' as const } },
 };
@@ -75,25 +79,34 @@ export class PrismaOrderRepository implements OrderRepository {
         for (const requested of input.items) {
           const product = productMap.get(requested.productId);
           if (!product) throw new OrderProductNotFoundError(requested.productId);
-          const selectedIds = new Set(requested.optionIds ?? []);
-          if (selectedIds.size !== (requested.optionIds ?? []).length)
-            throw new OrderInvalidOptionsError(product.id);
+          const selectedIds = requested.optionIds ?? [];
+          const selectedCounts = new Map<string, number>();
+          for (const optionId of selectedIds)
+            selectedCounts.set(optionId, (selectedCounts.get(optionId) ?? 0) + 1);
           const activeGroups = product.optionGroups.filter((group) => group.isActive);
-          const selected = activeGroups.flatMap((group) =>
-            group.options.filter((option) => option.isAvailable && selectedIds.has(option.id)),
+          const availableOptions = activeGroups.flatMap((group) =>
+            group.options.filter((option) => option.isAvailable),
           );
+          const availableOptionIds = new Set(availableOptions.map((option) => option.id));
+          if (selectedIds.some((optionId) => !availableOptionIds.has(optionId)))
+            throw new OrderInvalidOptionsError(product.id);
           if (
-            selected.length !== selectedIds.size ||
             activeGroups.some((group) => {
-              const count = group.options.filter((option) => selectedIds.has(option.id)).length;
-              return (
-                (group.isRequired && count === 0) ||
-                count < group.minSelections ||
-                count > group.maxSelections
+              const groupCount = group.options.reduce(
+                (total, option) => total + (selectedCounts.get(option.id) ?? 0),
+                0,
               );
+              if (group.isRequired && groupCount === 0) return true;
+              return group.options.some((option) => {
+                const quantity = selectedCounts.get(option.id) ?? 0;
+                return quantity < option.minSelections || quantity > option.maxSelections;
+              });
             })
           )
             throw new OrderInvalidOptionsError(product.id);
+          const selected = selectedIds
+            .map((optionId) => availableOptions.find((option) => option.id === optionId))
+            .filter((option): option is (typeof availableOptions)[number] => Boolean(option));
           const unitPrice =
             product.price.toNumber() +
             selected.reduce((sum, option) => sum + option.price.toNumber(), 0);
@@ -151,7 +164,7 @@ export class PrismaOrderRepository implements OrderRepository {
       include: orderInclude,
     });
     if (!order) throw new Error('Created order could not be loaded');
-    return toDomain(order);
+    return await toDomain(order);
   }
 
   async getById(ownerUserId: string, orderId: string): Promise<Order | null> {
@@ -159,7 +172,7 @@ export class PrismaOrderRepository implements OrderRepository {
       where: { id: orderId, business: { users: { some: { id: ownerUserId } } } },
       include: orderInclude,
     });
-    return row ? toDomain(row) : null;
+    return row ? await toDomain(row) : null;
   }
 
   async list(
@@ -181,14 +194,38 @@ export class PrismaOrderRepository implements OrderRepository {
       : undefined;
     const search = input.search?.trim();
     const normalizedSearchPhone = search ? normalizePhone(search) : '';
-    // Short numeric searches must remain exact order-number searches. Otherwise
-    // search=9 would also match every customer phone containing the digit 9.
-    const searchPhone = /^\d{10}$/.test(normalizedSearchPhone) ? normalizedSearchPhone : '';
-    const searchOrderNumber = search && /^\d+$/.test(search) ? Number(search) : undefined;
+    const numericSearch = search && /^\d+$/.test(search);
+    const searchPhone = numericSearch
+      ? normalizedSearchPhone
+      : /^\d{10}$/.test(normalizedSearchPhone)
+        ? normalizedSearchPhone
+        : '';
+    const searchPhoneSuffix = Boolean(numericSearch && normalizedSearchPhone.length < 10);
+    // Prisma Int values are 32-bit. Do not add an out-of-range numeric search
+    // as an orderNumber predicate (for example, a 10-digit customer phone).
+    const parsedOrderNumber = numericSearch ? Number(search) : undefined;
+    const searchOrderNumber =
+      parsedOrderNumber !== undefined &&
+      Number.isInteger(parsedOrderNumber) &&
+      parsedOrderNumber >= -2147483648 &&
+      parsedOrderNumber <= 2147483647
+        ? parsedOrderNumber
+        : undefined;
     const searchByNumber =
       searchOrderNumber !== undefined && Number.isSafeInteger(searchOrderNumber)
         ? { orderNumber: searchOrderNumber }
         : undefined;
+    const numericOrderIds =
+      search && /^\d+$/.test(search) && typeof this.prisma.$queryRaw === 'function'
+        ? (
+            await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+              SELECT "id"
+              FROM "Order"
+              WHERE "businessId" = ${input.businessId}
+                AND CAST("orderNumber" AS TEXT) LIKE ${`%${search}`}
+            `)
+          ).map((row) => row.id)
+        : [];
     const where = {
       businessId: input.businessId,
       business: { users: { some: { id: ownerUserId } } },
@@ -199,8 +236,17 @@ export class PrismaOrderRepository implements OrderRepository {
             OR: [
               { id: search },
               ...(searchByNumber ? [searchByNumber] : []),
+              ...(numericOrderIds.length > 0 ? [{ id: { in: numericOrderIds } }] : []),
               { customerName: { contains: search, mode: 'insensitive' as const } },
-              ...(searchPhone ? [{ customerPhone: { contains: searchPhone } }] : []),
+              ...(searchPhone
+                ? [
+                    {
+                      customerPhone: searchPhoneSuffix
+                        ? { endsWith: searchPhone }
+                        : { contains: searchPhone },
+                    },
+                  ]
+                : []),
             ],
           }
         : {}),
@@ -215,7 +261,7 @@ export class PrismaOrderRepository implements OrderRepository {
       }),
       this.prisma.order.count({ where }),
     ]);
-    return { orders: rows.map(toDomain), total };
+    return { orders: await Promise.all(rows.map(toDomain)), total };
   }
 
   async updateStatus(
@@ -237,7 +283,7 @@ export class PrismaOrderRepository implements OrderRepository {
         data: { status: databaseStatus, statusHistory: { create: { status: databaseStatus } } },
         include: orderInclude,
       });
-      return toDomain(row);
+      return await toDomain(row);
     });
   }
 }
@@ -249,7 +295,7 @@ const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
-function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>): Order {
+async function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>): Promise<Order> {
   const props: OrderProps = {
     id: row.id,
     businessId: row.businessId,
@@ -264,10 +310,11 @@ function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>)
     notes: row.notes,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    items: row.items.map((item) => ({
+    items: await Promise.all(row.items.map(async (item) => ({
       id: item.id,
       productId: item.productId,
       productName: item.productName,
+      productImageUrl: await resolveProductImageUrl(item.product?.imageUrl),
       unitPrice: item.unitPrice.toNumber(),
       quantity: item.quantity,
       subtotal: item.subtotal.toNumber(),
@@ -276,7 +323,7 @@ function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>)
         name: option.name,
         price: option.price.toNumber(),
       })),
-    })),
+    }))),
     statusHistory: row.statusHistory.map((entry) => ({
       status: entry.status as OrderStatus,
       createdAt: entry.createdAt,

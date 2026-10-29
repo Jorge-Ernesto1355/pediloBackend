@@ -79,6 +79,8 @@ export interface PublicOption {
   optionGroupId: string;
   name: string;
   price: number;
+  minSelections: number;
+  maxSelections: number;
   sortOrder: number;
   isAvailable: boolean;
   createdAt: Date;

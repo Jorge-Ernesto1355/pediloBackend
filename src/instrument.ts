@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/node';
 
-const environment = process.env.NODE_ENV ?? 'development';
+const environment = process.env.PEDILO_ENV ?? process.env.NODE_ENV ?? 'local';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,

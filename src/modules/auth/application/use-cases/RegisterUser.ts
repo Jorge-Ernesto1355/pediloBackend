@@ -11,6 +11,8 @@ export class RegisterUser {
       email: email.toString(),
       password: dto.password,
       name: dto.name,
+      acceptLegalDocuments: dto.acceptLegalDocuments,
+      ageDeclaration: dto.ageDeclaration,
     });
   }
 }

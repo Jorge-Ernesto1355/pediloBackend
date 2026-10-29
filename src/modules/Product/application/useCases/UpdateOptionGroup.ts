@@ -18,7 +18,9 @@ export class UpdateOptionGroup {
       throw new OptionGroupNotFoundError();
     assertOptionGroupConfiguration({
       isRequired: dto.isRequired ?? current.isRequired,
-      minSelections: dto.minSelections ?? current.minSelections,
+      minSelections:
+        dto.minSelections ??
+        (dto.isRequired === true && !current.isRequired ? 1 : current.minSelections),
       maxSelections: dto.maxSelections ?? current.maxSelections,
     });
     const updated = await this.repository.updateGroup(ownerUserId, groupId, dto);

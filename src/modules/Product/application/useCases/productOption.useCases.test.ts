@@ -84,8 +84,8 @@ describe('product option use cases', () => {
         minSelections: 0,
         maxSelections: 3,
         options: [
-          { name: 'Queso', price: 15, isAvailable: true },
-          { name: 'Tocino', price: 20, isAvailable: true },
+          { name: 'Queso', price: 15, minSelections: 0, maxSelections: 1, isAvailable: true },
+          { name: 'Tocino', price: 20, minSelections: 0, maxSelections: 1, isAvailable: true },
         ],
       }),
     );

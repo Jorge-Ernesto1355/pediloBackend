@@ -80,7 +80,11 @@ describeDatabaseIntegration('Auth signup session isolation (PostgreSQL integrati
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     const signup = (email: string, password: string, name: string, cookie?: string) =>
-      request('/register', { email, password, name }, cookie);
+      request(
+        '/register',
+        { email, password, name, acceptLegalDocuments: true, ageDeclaration: true },
+        cookie,
+      );
     const cookieFrom = (response: Response) => {
       const setCookie = response.headers.get('set-cookie');
       expect(setCookie, 'signup/login must set a session cookie').to.be.a('string');

@@ -8,6 +8,8 @@ export class CreateOption {
     return this.repository.createOption(ownerUserId, groupId, {
       name: dto.name,
       price: dto.price ?? 0,
+      minSelections: dto.minSelections ?? 0,
+      maxSelections: dto.maxSelections ?? 1,
       isAvailable: dto.isAvailable ?? true,
     });
   }
