@@ -76,6 +76,11 @@ export const auth = betterAuth({
   baseURL: authBaseUrl,
   trustedOrigins,
   advanced: {
+    ipAddress: {
+      // Cloudflare sets this single-client header before traffic reaches Render.
+      // Keep X-Forwarded-For as a fallback for local and direct Render requests.
+      ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'],
+    },
     cookiePrefix,
     crossSubDomainCookies: {
       // Keep Development and Production isolated with different cookie names.

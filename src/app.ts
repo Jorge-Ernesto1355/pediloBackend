@@ -19,7 +19,7 @@ import { requestLogger, requestLoggerErrorHandler } from './shared/config/http/r
 import { salesRouter } from './modules/dashboard/presentation/http/sales.routes.js';
 import { businessSettingsRouter } from './modules/Business/presentation/http/business-settings.routes.js';
 import { accountRouter } from './modules/Account/presentation/http/account.routes.js';
-import { trustedOrigins } from './shared/config/env.js';
+import { env, trustedOrigins } from './shared/config/env.js';
 import { trustedOriginGuard } from './shared/config/security/origin-guard.js';
 import { PasswordRecoveryRateLimiter } from './modules/auth/presentation/http/passwordRecoveryRateLimiter.js';
 import { analyticsRouter } from './modules/analytics/presentation/http/analytics.routes.js';
@@ -29,6 +29,10 @@ import {
 } from './modules/GoogleReviews/presentation/http/google-review.routes.js';
 export function createApp() {
   const app = express();
+  // Render terminates TLS in its load balancer and forwards the client address.
+  // Trust only that single proxy hop in deployed environments so request.ip
+  // does not collapse every visitor into the load balancer's address.
+  app.set('trust proxy', env.PEDILO_ENV === 'local' ? false : 1);
   const betterAuthRateLimiter = new PasswordRecoveryRateLimiter();
 
   app.use(requestLogger);
