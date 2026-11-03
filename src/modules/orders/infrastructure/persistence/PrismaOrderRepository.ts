@@ -6,24 +6,28 @@ import {
 } from '@prisma/client';
 import { Order, OrderProps, OrderSource, OrderStatus } from '../../domain/entities/Order.js';
 import { CreateOrderDTO, ListOrdersDTO } from '../../application/dto/OrderDTO.js';
-import { OrderRepository } from '../../application/ports/OrderRepository.js';
+import { OrderRepository, OrderStatusTimings } from '../../application/ports/OrderRepository.js';
 import {
   OrderBusinessNotFoundError,
   OrderBusinessAccessError,
   OrderInvalidOptionsError,
   OrderInvalidStatusTransitionError,
   OrderProductNotFoundError,
+  OrderPriceChangedError,
 } from '../../domain/errors/OrderErrors.js';
 import { normalizePhone } from '@/shared/validation/phone.js';
 import { getBusinessPeriodRange } from '@/shared/time/business-period.js';
-import { resolveProductImageUrl } from '@/shared/images/product-image.js';
+import { orderEventHub } from '../sse/OrderEventHub.js';
+import { calculateCustomerDiscountAmount } from '@/modules/CustomerDiscount/domain/discountMath.js';
+import { CustomerDiscountApplicationFailedError } from '@/modules/CustomerDiscount/domain/CustomerDiscountErrors.js';
+import { CustomerDisabledError } from '@/modules/Customer/domain/errors/CustomerErrors.js';
+import { resolveComboSelections } from '../../domain/comboSelection.js';
 
 const orderInclude = {
   items: {
     orderBy: { id: 'asc' as const },
     include: {
       options: { orderBy: { id: 'asc' as const } },
-      product: { select: { imageUrl: true } },
     },
   },
   statusHistory: { orderBy: { createdAt: 'asc' as const } },
@@ -31,6 +35,26 @@ const orderInclude = {
 
 export class PrismaOrderRepository implements OrderRepository {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async getEventsRestaurantId(ownerUserId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: ownerUserId },
+      select: {
+        businessId: true,
+        business: {
+          select: {
+            members: {
+              where: { userId: ownerUserId, role: 'OWNER' },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    if (!user?.businessId || !user.business?.members.length) return null;
+    return user.businessId;
+  }
 
   async create(businessId: string, input: CreateOrderDTO): Promise<Order> {
     return this.createWithSource(businessId, input, 'PUBLIC');
@@ -40,6 +64,7 @@ export class PrismaOrderRepository implements OrderRepository {
     ownerUserId: string,
     businessId: string,
     input: CreateOrderDTO,
+    idempotencyKey?: string,
   ): Promise<Order> {
     const user = await this.prisma.user.findUnique({
       where: { id: ownerUserId },
@@ -47,15 +72,25 @@ export class PrismaOrderRepository implements OrderRepository {
     });
     if (!user?.businessId) throw new OrderBusinessNotFoundError();
     if (user.businessId !== businessId) throw new OrderBusinessAccessError();
-    return this.createWithSource(businessId, input, 'RESTAURANT');
+    return this.createWithSource(businessId, input, 'RESTAURANT', idempotencyKey);
   }
 
   private async createWithSource(
     businessId: string,
     input: CreateOrderDTO,
     source: PrismaOrderSource,
+    idempotencyKey?: string,
   ): Promise<Order> {
-    const orderId = await this.prisma.$transaction(
+    if (idempotencyKey) {
+      const existing = await this.prisma.order.findUnique({
+        where: { businessId_idempotencyKey: { businessId, idempotencyKey } },
+        include: orderInclude,
+      });
+      if (existing) return await toDomain(existing);
+    }
+    let created: { id: string; createdAt: Date };
+    try {
+      created = await this.prisma.$transaction(
       async (tx) => {
         const business = await tx.business.findUnique({
           where: { id: businessId },
@@ -65,7 +100,11 @@ export class PrismaOrderRepository implements OrderRepository {
         const productIds = input.items.map((item) => item.productId);
         const products = await tx.product.findMany({
           where: { id: { in: productIds }, businessId, isAvailable: true },
-          include: { optionGroups: { include: { options: true } } },
+          include: {
+            optionGroups: { include: { options: true } },
+            comboOptionGroups: { include: { products: { include: { product: true } } } },
+            comboIncludes: { include: { product: true } },
+          },
         });
         const productMap = new Map(products.map((product) => [product.id, product]));
         const items: {
@@ -74,12 +113,29 @@ export class PrismaOrderRepository implements OrderRepository {
           unitPrice: number;
           quantity: number;
           subtotal: number;
-          options: { name: string; price: number }[];
+          options: { name: string; groupName: string | null; price: number }[];
         }[] = [];
         for (const requested of input.items) {
           const product = productMap.get(requested.productId);
           if (!product) throw new OrderProductNotFoundError(requested.productId);
           const selectedIds = requested.optionIds ?? [];
+          const comboSelections = resolveComboSelections(
+            (product.comboOptionGroups ?? []).map((group) => ({
+              id: group.id,
+              name: group.name,
+              minSelections: group.minSelections,
+              maxSelections: group.maxSelections,
+              products: group.products.map((choice) => ({
+                id: choice.id,
+                productId: choice.productId,
+                name: choice.product.name,
+                isAvailable: choice.product.isAvailable,
+              })),
+            })),
+            requested.comboChoiceIds ?? [],
+          );
+          if ((product.comboOptionGroups ?? []).length > 0 && !comboSelections)
+            throw new OrderInvalidOptionsError(product.id);
           const selectedCounts = new Map<string, number>();
           for (const optionId of selectedIds)
             selectedCounts.set(optionId, (selectedCounts.get(optionId) ?? 0) + 1);
@@ -110,19 +166,42 @@ export class PrismaOrderRepository implements OrderRepository {
           const unitPrice =
             product.price.toNumber() +
             selected.reduce((sum, option) => sum + option.price.toNumber(), 0);
+          const groupNameByOptionId = new Map(
+            activeGroups.flatMap((group) =>
+              group.options.map((option) => [option.id, group.name] as const),
+            ),
+          );
+          const includedComboProducts = (product.comboIncludes ?? []).map((included) => ({
+            name: included.product.name,
+            groupName: 'Productos incluidos',
+            price: 0,
+          }));
           items.push({
             productId: product.id,
             productName: product.name,
             unitPrice,
             quantity: requested.quantity,
             subtotal: unitPrice * requested.quantity,
-            options: selected.map((option) => ({
-              name: option.name,
-              price: option.price.toNumber(),
-            })),
+            options: [
+              ...includedComboProducts,
+              ...selected.map((option) => ({
+                name: option.name,
+                groupName: groupNameByOptionId.get(option.id) ?? null,
+                price: option.price.toNumber(),
+              })),
+              ...(comboSelections ?? []),
+            ],
           });
         }
         const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+        if (
+          source === 'PUBLIC' &&
+          input.expectedSubtotal !== undefined &&
+          !input.acceptPriceChange &&
+          Math.abs(subtotal - input.expectedSubtotal) >= 0.01
+        ) {
+          throw new OrderPriceChangedError(input.expectedSubtotal, subtotal);
+        }
         const last = await tx.order.aggregate({
           where: { businessId },
           _max: { orderNumber: true },
@@ -136,6 +215,53 @@ export class PrismaOrderRepository implements OrderRepository {
               update: {},
             })
           : null;
+        if (source === 'PUBLIC' && savedCustomer?.isDisabled) throw new CustomerDisabledError();
+        let appliedDiscountId: string | null = null;
+        let discountAmount = 0;
+        if (source === 'PUBLIC' && savedCustomer && !input.ignoreCustomerDiscount) {
+          const now = new Date();
+          await tx.customerDiscount.updateMany({
+            where: {
+              businessId,
+              customerId: savedCustomer.id,
+              status: 'AVAILABLE',
+              expiresAt: { lte: now },
+            },
+            data: { status: 'EXPIRED' },
+          });
+          const candidate = await tx.customerDiscount.findFirst({
+            where: {
+              businessId,
+              customerId: savedCustomer.id,
+              status: 'AVAILABLE',
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (candidate) {
+            const calculatedAmount = calculateCustomerDiscountAmount(
+              candidate.type,
+              candidate.value.toNumber(),
+              subtotal,
+            );
+            if (calculatedAmount > 0) {
+              const claimed = await tx.customerDiscount.updateMany({
+                where: {
+                  id: candidate.id,
+                  status: 'AVAILABLE',
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                },
+                data: { status: 'USED', usedAt: now },
+              });
+              if (claimed.count === 1) {
+                appliedDiscountId = candidate.id;
+                discountAmount = calculatedAmount;
+              } else {
+                throw new CustomerDiscountApplicationFailedError();
+              }
+            }
+          }
+        }
         const order = await tx.order.create({
           data: {
             businessId,
@@ -143,10 +269,13 @@ export class PrismaOrderRepository implements OrderRepository {
             orderNumber: (last._max.orderNumber ?? 0) + 1,
             status: 'PENDING',
             source,
+            fulfillmentType: input.fulfillmentType ?? 'DINE_IN',
             subtotal,
-            total: subtotal,
+            discountAmount,
+            total: Math.max(0, subtotal - discountAmount),
             customerName: input.customer.name,
             customerPhone: input.customer.phone,
+            idempotencyKey,
             notes: input.notes,
             items: {
               create: items.map((item) => ({ ...item, options: { create: item.options } })),
@@ -154,13 +283,42 @@ export class PrismaOrderRepository implements OrderRepository {
             statusHistory: { create: { status: 'PENDING' } },
           },
         });
-        return order.id;
-      },
-      { timeout: 15_000 },
-    );
+        if (appliedDiscountId) {
+          await tx.customerDiscount.update({
+            where: { id: appliedDiscountId },
+            data: { usedOrderId: order.id },
+          });
+        }
+        return { id: order.id, createdAt: order.createdAt };
+        },
+        { timeout: 15_000 },
+      );
+    } catch (error) {
+      if (idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.prisma.order.findUnique({
+          where: { businessId_idempotencyKey: { businessId, idempotencyKey } },
+          include: orderInclude,
+        });
+        if (existing) return await toDomain(existing);
+      }
+      throw error;
+    }
+
+    // The Prisma transaction has committed before any live notification is published.
+    // SSE delivery failures must never change the outcome of an already-saved order.
+    try {
+      orderEventHub.publishNewOrder({
+        orderId: created.id,
+        restaurantId: businessId,
+        createdAt: created.createdAt,
+        source,
+      });
+    } catch {
+      // Live notifications are best effort; the order remains persisted.
+    }
 
     const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+      where: { id: created.id },
       include: orderInclude,
     });
     if (!order) throw new Error('Created order could not be loaded');
@@ -268,23 +426,100 @@ export class PrismaOrderRepository implements OrderRepository {
     ownerUserId: string,
     orderId: string,
     status: OrderStatus,
-  ): Promise<Order | null> {
-    return this.prisma.$transaction(async (tx) => {
+    timings: OrderStatusTimings = {},
+  ) {
+    const transactionStartedAt = performance.now();
+    const update = await this.prisma.$transaction(async (tx) => {
+      const lookupStartedAt = performance.now();
       const existing = await tx.order.findFirst({
         where: { id: orderId, business: { users: { some: { id: ownerUserId } } } },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          businessId: true,
+          orderNumber: true,
+          status: true,
+          _count: { select: { statusHistory: true } },
+          statusHistory: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { createdAt: true },
+          },
+        },
       });
+      timings.lookupMs = performance.now() - lookupStartedAt;
       if (!existing) return null;
       if (!allowedTransitions[existing.status].includes(status))
         throw new OrderInvalidStatusTransitionError(existing.status, status);
+
       const databaseStatus = status as PrismaOrderStatus;
-      const row = await tx.order.update({
-        where: { id: orderId },
-        data: { status: databaseStatus, statusHistory: { create: { status: databaseStatus } } },
-        include: orderInclude,
+      const previousStatusAt = existing.statusHistory[0]?.createdAt.getTime() ?? 0;
+      const updatedAt = new Date(Math.max(Date.now(), previousStatusAt + 1));
+      const updateStartedAt = performance.now();
+      const changed = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          status: existing.status,
+          business: { users: { some: { id: ownerUserId } } },
+        },
+        data: { status: databaseStatus, updatedAt },
       });
-      return await toDomain(row);
+      timings.updateMs = performance.now() - updateStartedAt;
+      if (changed.count !== 1) {
+        const current = await tx.order.findFirst({
+          where: { id: orderId, business: { users: { some: { id: ownerUserId } } } },
+          select: { status: true },
+        });
+        if (!current) return null;
+        throw new OrderInvalidStatusTransitionError(current.status, status);
+      }
+
+      const historyStartedAt = performance.now();
+      await tx.orderStatusHistory.create({
+        data: { orderId, status: databaseStatus, createdAt: updatedAt },
+      });
+      timings.historyMs = performance.now() - historyStartedAt;
+      return {
+        id: existing.id,
+        businessId: existing.businessId,
+        orderNumber: existing.orderNumber,
+        status,
+        updatedAt,
+        statusRevision: existing._count.statusHistory + 1,
+      };
     });
+    timings.transactionMs = performance.now() - transactionStartedAt;
+
+    if (update) {
+      const queueStartedAt = performance.now();
+      setImmediate(() => {
+        const deliveryStartedAt = performance.now();
+        let connections = 0;
+        try {
+          connections = orderEventHub.publishOrderStatusUpdated({
+            orderId: update.id,
+            businessId: update.businessId,
+            orderNumber: update.orderNumber,
+            status: update.status,
+            updatedAt: update.updatedAt,
+            statusRevision: update.statusRevision,
+          });
+        } catch {
+          // The database commit remains successful if an SSE consumer disconnects.
+        } finally {
+          console.info(
+            JSON.stringify({
+              type: 'order_status_sse_delivery',
+              orderId: update.id,
+              statusRevision: update.statusRevision,
+              connections,
+              deliveryMs: Number((performance.now() - deliveryStartedAt).toFixed(2)),
+            }),
+          );
+        }
+      });
+      timings.eventQueueMs = performance.now() - queueStartedAt;
+    }
+    return update;
   }
 }
 
@@ -295,7 +530,9 @@ const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
-async function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>): Promise<Order> {
+async function toDomain(
+  row: Prisma.OrderGetPayload<{ include: typeof orderInclude }>,
+): Promise<Order> {
   const props: OrderProps = {
     id: row.id,
     businessId: row.businessId,
@@ -303,27 +540,29 @@ async function toDomain(row: Prisma.OrderGetPayload<{ include: typeof orderInclu
     orderNumber: row.orderNumber,
     status: row.status as OrderStatus,
     source: row.source as OrderSource,
+    fulfillmentType: row.fulfillmentType ?? 'DINE_IN',
     subtotal: row.subtotal.toNumber(),
+    discountAmount: row.discountAmount?.toNumber() ?? 0,
     total: row.total.toNumber(),
     customerName: row.customerName,
     customerPhone: row.customerPhone,
     notes: row.notes,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    items: await Promise.all(row.items.map(async (item) => ({
+    items: row.items.map((item) => ({
       id: item.id,
       productId: item.productId,
       productName: item.productName,
-      productImageUrl: await resolveProductImageUrl(item.product?.imageUrl),
       unitPrice: item.unitPrice.toNumber(),
       quantity: item.quantity,
       subtotal: item.subtotal.toNumber(),
       options: item.options.map((option) => ({
         id: option.id,
         name: option.name,
+        groupName: option.groupName,
         price: option.price.toNumber(),
       })),
-    }))),
+    })),
     statusHistory: row.statusHistory.map((entry) => ({
       status: entry.status as OrderStatus,
       createdAt: entry.createdAt,

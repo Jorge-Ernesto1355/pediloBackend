@@ -30,3 +30,15 @@ export class OrderInvalidStatusTransitionError extends AppError {
     super(`Order cannot change from ${from} to ${to}`, 409, 'ORDER_INVALID_STATUS_TRANSITION');
   }
 }
+export class OrderPriceChangedError extends AppError {
+  readonly details: { expectedSubtotal: number; currentSubtotal: number; difference: number };
+
+  constructor(expectedSubtotal: number, currentSubtotal: number) {
+    super('The order price changed while checking out', 409, 'ORDER_PRICE_CHANGED');
+    this.details = {
+      expectedSubtotal,
+      currentSubtotal,
+      difference: Math.round((currentSubtotal - expectedSubtotal) * 100) / 100,
+    };
+  }
+}

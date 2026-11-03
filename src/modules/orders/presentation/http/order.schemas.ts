@@ -7,13 +7,18 @@ const itemSchema = z
     productId: z.string().trim().min(1),
     quantity: z.number().int().min(1).max(100),
     optionIds: z.array(z.string().trim().min(1)).max(50).optional(),
+    comboChoiceIds: z.array(z.string().trim().min(1)).max(50).optional(),
   })
   .strict();
 export const createOrderSchema = z
   .object({
     customer: z.object({ name: z.string().trim().min(1).max(20), phone: phoneSchema }).strict(),
     items: z.array(itemSchema).min(1).max(100),
+    fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
     notes: z.string().trim().max(200).nullable().optional(),
+    ignoreCustomerDiscount: z.boolean().optional(),
+    expectedSubtotal: z.number().finite().nonnegative().optional(),
+    acceptPriceChange: z.boolean().optional(),
   })
   .strict();
 export const createRestaurantOrderSchema = z
@@ -21,6 +26,7 @@ export const createRestaurantOrderSchema = z
     customerName: z.string().trim().min(1).max(120).nullable().optional(),
     customerPhone: phoneSchema.nullable().optional(),
     items: z.array(itemSchema).min(1).max(100),
+    fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
     notes: z.string().trim().max(200).nullable().optional(),
   })
   .strict();

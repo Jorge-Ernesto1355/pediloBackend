@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
+import { performance } from 'node:perf_hooks';
 import { CreateOrder } from '../../application/useCases/CreateOrder.js';
 import { CreateRestaurantOrder } from '../../application/useCases/CreateRestaurantOrder.js';
 import { GetOrder } from '../../application/useCases/GetOrder.js';
 import { ListOrders } from '../../application/useCases/ListOrders.js';
 import { UpdateOrderStatus } from '../../application/useCases/UpdateOrderStatus.js';
+import type { OrderStatusTimings } from '../../application/ports/OrderRepository.js';
 import {
   businessIdSchema,
   createOrderSchema,
@@ -36,6 +38,11 @@ export class OrderController {
     const body = createRestaurantOrderSchema.safeParse(req.body);
     if (!params.success) return bad(res, params.error);
     if (!body.success) return bad(res, body.error);
+    const rawIdempotencyKey = req.get('Idempotency-Key')
+    const idempotencyKey =
+      rawIdempotencyKey && /^[A-Za-z0-9_-]{16,128}$/.test(rawIdempotencyKey)
+        ? rawIdempotencyKey
+        : undefined;
     return this.createRestaurantOrder
       .execute(req.user!.id, params.data.businessId, {
         customer: {
@@ -43,8 +50,9 @@ export class OrderController {
           phone: body.data.customerPhone ?? null,
         },
         items: body.data.items,
+        fulfillmentType: body.data.fulfillmentType,
         notes: body.data.notes,
-      })
+      }, idempotencyKey)
       .then((order) => res.status(201).json({ order: order.toJSON() }))
       .catch((error) => handle(res, error));
   };
@@ -74,14 +82,37 @@ export class OrderController {
       .catch((error) => handle(res, error));
   };
   updateStatus = (req: Request, res: Response) => {
+    const validationStartedAt = performance.now();
     const params = orderIdSchema.safeParse(req.params);
     const body = orderStatusSchema.safeParse(req.body);
+    const timings: OrderStatusTimings = {
+      authMs: res.locals.orderStatusAuthMs as number | undefined,
+      validationMs: performance.now() - validationStartedAt,
+    };
     if (!params.success) return bad(res, params.error);
     if (!body.success) return bad(res, body.error);
+    const startedAt = performance.now();
+    const sendTimings = () => {
+      timings.totalMs = performance.now() - startedAt;
+      res.locals.orderStatusTimings = timings;
+      res.setHeader(
+        'Server-Timing',
+        Object.entries(timings)
+          .filter(([, value]) => typeof value === 'number')
+          .map(([name, value]) => `${name};dur=${Number(value).toFixed(2)}`)
+          .join(', '),
+      );
+    };
     return this.updateOrderStatus
-      .execute(req.user!.id, params.data.orderId, body.data.status)
-      .then((order) => res.json({ order: order.toJSON() }))
-      .catch((error) => handle(res, error));
+      .execute(req.user!.id, params.data.orderId, body.data.status, timings)
+      .then((order) => {
+        sendTimings();
+        return res.json({ order });
+      })
+      .catch((error) => {
+        sendTimings();
+        return handle(res, error);
+      });
   };
 }
 function bad(res: Response, error: { flatten(): unknown }) {
@@ -105,5 +136,6 @@ function handle(res: Response, error: unknown) {
         ? error.message
         : 'Unexpected error'
       : 'Unexpected error';
-  return res.status(status).json({ error: { code, message } });
+  const details = error && typeof error === 'object' && 'details' in error ? error.details : undefined;
+  return res.status(status).json({ error: { code, message, ...(details ? { details } : {}) } });
 }
