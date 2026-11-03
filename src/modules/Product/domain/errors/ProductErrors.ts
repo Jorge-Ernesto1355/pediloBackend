@@ -40,6 +40,14 @@ export class ProductHasOrdersError extends ProductError {
   }
 }
 
+export class ProductUsedInComboError extends ProductError {
+  readonly httpStatus = 409;
+  readonly code = 'PRODUCT_USED_IN_COMBO';
+  constructor() {
+    super('Product cannot be deleted while it is included in a combo or offered as a combo choice');
+  }
+}
+
 export class ProductTargetCategoryNotFoundError extends ProductError {
   readonly httpStatus = 404;
   readonly code = 'TARGET_CATEGORY_NOT_FOUND';

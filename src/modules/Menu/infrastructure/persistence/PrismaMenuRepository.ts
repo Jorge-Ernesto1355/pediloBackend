@@ -2,6 +2,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import {
   Menu,
   MenuCategorySummary,
+  MenuComboComponent,
+  MenuComboOptionGroup,
   MenuProduct,
   MenuProductOptionGroup,
   MenuProps,
@@ -25,6 +27,19 @@ const menuInclude = {
       products: {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
         include: {
+          comboIncludes: {
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            include: { product: true },
+          },
+          comboOptionGroups: {
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              products: {
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                include: { product: true },
+              },
+            },
+          },
           optionGroups: {
             orderBy: { sortOrder: 'asc' },
             include: {
@@ -153,52 +168,101 @@ export class PrismaMenuRepository implements MenuRepository {
   }
 }
 
-async function toDomain(row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>): Promise<Menu> {
-  const categories: MenuCategorySummary[] = await Promise.all(row.categories.map(async (category) => ({
-    id: category.id,
-    name: category.name,
-    description: category.description,
-    sortOrder: category.sortOrder,
-    isActive: category.isActive,
-    products: await Promise.all(category.products.map(async (product): Promise<MenuProduct> => ({
-      id: product.id,
-      businessId: product.businessId,
-      categoryId: product.categoryId,
-      name: product.name,
-      description: product.description,
-      price: product.price.toNumber(),
-      imageUrl: await resolveProductImageUrl(product.imageUrl),
-      imageBlurUrl: product.imageBlurUrl,
-      sortOrder: product.sortOrder,
-      isAvailable: product.isAvailable,
-      createdAt: product.createdAt,
-      updatedAt: product.updatedAt,
-      optionGroups: product.optionGroups.map((group): MenuProductOptionGroup => ({
-        id: group.id,
-        productId: group.productId,
-        name: group.name,
-        isRequired: group.isRequired,
-        minSelections: group.minSelections,
-        maxSelections: group.maxSelections,
-        sortOrder: group.sortOrder,
-        isActive: group.isActive,
-        createdAt: group.createdAt,
-        updatedAt: group.updatedAt,
-        options: group.options.map((option) => ({
-          id: option.id,
-          optionGroupId: option.optionGroupId,
-          name: option.name,
-          price: option.price.toNumber(),
-          minSelections: option.minSelections,
-          maxSelections: option.maxSelections,
-          isAvailable: option.isAvailable,
-          sortOrder: option.sortOrder,
-          createdAt: option.createdAt,
-          updatedAt: option.updatedAt,
+async function toDomain(
+  row: Prisma.MenuGetPayload<{ include: typeof menuInclude }>,
+): Promise<Menu> {
+  const categories: MenuCategorySummary[] = await Promise.all(
+    row.categories.map(async (category) => ({
+      id: category.id,
+      name: category.name,
+      description: category.description,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+      products: await Promise.all(
+        category.products.map(async (product): Promise<MenuProduct> => ({
+          id: product.id,
+          businessId: product.businessId,
+          categoryId: product.categoryId,
+          type: product.type,
+          name: product.name,
+          description: product.description,
+          price: product.price.toNumber(),
+          imageUrl: await resolveProductImageUrl(product.imageUrl),
+          imageBlurUrl: product.imageBlurUrl,
+          sortOrder: product.sortOrder,
+          isAvailable: product.isAvailable,
+          createdAt: product.createdAt,
+          updatedAt: product.updatedAt,
+          includedProducts: await Promise.all(
+            product.comboIncludes.map(async (included): Promise<MenuComboComponent> => ({
+              id: included.id,
+              productId: included.productId,
+              sortOrder: included.sortOrder,
+              product: {
+                id: included.product.id,
+                name: included.product.name,
+                description: included.product.description,
+                price: included.product.price.toNumber(),
+                imageUrl: await resolveProductImageUrl(included.product.imageUrl),
+                categoryId: included.product.categoryId,
+                isAvailable: included.product.isAvailable,
+              },
+            })),
+          ),
+          comboOptionGroups: await Promise.all(
+            product.comboOptionGroups.map(async (group): Promise<MenuComboOptionGroup> => ({
+              id: group.id,
+              comboProductId: group.comboProductId,
+              name: group.name,
+              minSelections: group.minSelections,
+              maxSelections: group.maxSelections,
+              sortOrder: group.sortOrder,
+              products: await Promise.all(
+                group.products.map(async (choice): Promise<MenuComboComponent> => ({
+                  id: choice.id,
+                  productId: choice.productId,
+                  sortOrder: choice.sortOrder,
+                  product: {
+                    id: choice.product.id,
+                    name: choice.product.name,
+                    description: choice.product.description,
+                    price: choice.product.price.toNumber(),
+                    imageUrl: await resolveProductImageUrl(choice.product.imageUrl),
+                    categoryId: choice.product.categoryId,
+                    isAvailable: choice.product.isAvailable,
+                  },
+                })),
+              ),
+            })),
+          ),
+          optionGroups: product.optionGroups.map((group): MenuProductOptionGroup => ({
+            id: group.id,
+            productId: group.productId,
+            name: group.name,
+            isRequired: group.isRequired,
+            minSelections: group.minSelections,
+            maxSelections: group.maxSelections,
+            sortOrder: group.sortOrder,
+            isActive: group.isActive,
+            createdAt: group.createdAt,
+            updatedAt: group.updatedAt,
+            options: group.options.map((option) => ({
+              id: option.id,
+              optionGroupId: option.optionGroupId,
+              name: option.name,
+              price: option.price.toNumber(),
+              minSelections: option.minSelections,
+              maxSelections: option.maxSelections,
+              isAvailable: option.isAvailable,
+              sortOrder: option.sortOrder,
+              createdAt: option.createdAt,
+              updatedAt: option.updatedAt,
+            })),
+          })),
         })),
-      })),
-    }))),
-  })));
+      ),
+    })),
+  );
 
   const props: MenuProps = {
     id: row.id,

@@ -129,15 +129,18 @@ model Business {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members    BusinessMember[]
-  settings   BusinessSettings?
-  menus      Menu[]
-  categories Category[]
-  products   Product[]
-  orders     Order[]
-  customers  Customer[]
-  users      User[]
-  images     BusinessImage[]
+  members               BusinessMember[]
+  settings              BusinessSettings?
+  menus                 Menu[]
+  categories            Category[]
+  products              Product[]
+  comboOptionGroups     ComboOptionGroup[]
+  comboIncludedProducts ComboIncludedProduct[]
+  orders                Order[]
+  customers             Customer[]
+  customerDiscounts     CustomerDiscount[]
+  users                 User[]
+  images                BusinessImage[]
 
   businessSchedule  BusinessSchedule?
   ubicationMaps     UbicationMaps?
@@ -279,14 +282,20 @@ model Category {
   products Product[]
 }
 
+enum ProductType {
+  PRODUCT
+  COMBO
+}
+
 model Product {
   id         String @id @default(cuid())
   businessId String
   categoryId String
 
   name        String
+  type        ProductType @default(PRODUCT)
   description String?
-  price       Decimal @db.Decimal(10, 2)
+  price       Decimal     @db.Decimal(10, 2)
 
   imageUrl      String?
   imageBlurUrl  String?
@@ -300,9 +309,13 @@ model Product {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
-  images       ProductImage[]
-  optionGroups ProductOptionGroup[]
-  orderItems   OrderItem[]
+  images            ProductImage[]
+  optionGroups      ProductOptionGroup[]
+  comboOptionGroups ComboOptionGroup[]     @relation("ComboParentProduct")
+  comboOptions      ComboOptionProduct[]   @relation("ComboChoiceProduct")
+  includedInCombos  ComboIncludedProduct[] @relation("ComboIncludedItem")
+  comboIncludes     ComboIncludedProduct[] @relation("ComboRequiredItems")
+  orderItems        OrderItem[]
 
   @@index([businessId, isAvailable, createdAt])
   @@index([businessId, categoryId])
@@ -339,18 +352,68 @@ model ProductOption {
   id            String @id @default(cuid())
   optionGroupId String @map("groupId")
 
-  name        String
-  price       Decimal  @default(0) @db.Decimal(10, 2)
+  name          String
+  price         Decimal  @default(0) @db.Decimal(10, 2)
   minSelections Int      @default(0) @map("minSelect")
   maxSelections Int      @default(1) @map("maxSelect")
-  sortOrder   Int      @default(0)
-  isAvailable Boolean  @default(true) @map("isActive")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sortOrder     Int      @default(0)
+  isAvailable   Boolean  @default(true) @map("isActive")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   optionGroup ProductOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
 
   @@index([optionGroupId, sortOrder])
+}
+
+model ComboOptionGroup {
+  id             String   @id @default(cuid())
+  businessId     String
+  comboProductId String
+  name           String
+  minSelections  Int      @default(1)
+  maxSelections  Int      @default(1)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  comboProduct Product              @relation("ComboParentProduct", fields: [comboProductId], references: [id], onDelete: Cascade)
+  products     ComboOptionProduct[]
+
+  @@index([businessId, comboProductId, sortOrder])
+}
+
+model ComboOptionProduct {
+  id            String   @id @default(cuid())
+  optionGroupId String
+  productId     String
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  optionGroup ComboOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  product     Product          @relation("ComboChoiceProduct", fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([optionGroupId, productId])
+  @@index([productId])
+  @@index([optionGroupId, sortOrder])
+}
+
+model ComboIncludedProduct {
+  id             String   @id @default(cuid())
+  businessId     String
+  comboProductId String
+  productId      String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  comboProduct Product  @relation("ComboRequiredItems", fields: [comboProductId], references: [id], onDelete: Cascade)
+  product      Product  @relation("ComboIncludedItem", fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([comboProductId, productId])
+  @@index([businessId, comboProductId, sortOrder])
+  @@index([productId])
 }
 
 model Customer {
@@ -359,12 +422,14 @@ model Customer {
 
   name  String?
   phone String
+  isDisabled Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  orders   Order[]
+  business  Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders    Order[]
+  discounts CustomerDiscount[]
 
   @@unique([businessId, phone])
 }
@@ -376,13 +441,16 @@ model Order {
 
   orderNumber Int
 
-  status   OrderStatus
-  source   OrderSource @default(PUBLIC)
-  subtotal Decimal     @db.Decimal(10, 2)
-  total    Decimal     @db.Decimal(10, 2)
+  status          OrderStatus
+  source          OrderSource          @default(PUBLIC)
+  fulfillmentType OrderFulfillmentType @default(DINE_IN)
+  subtotal        Decimal              @db.Decimal(10, 2)
+  discountAmount  Decimal              @default(0) @db.Decimal(10, 2)
+  total           Decimal              @db.Decimal(10, 2)
 
   customerName  String?
   customerPhone String?
+  idempotencyKey String?
 
   notes String?
 
@@ -392,10 +460,14 @@ model Order {
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customer Customer? @relation(fields: [customerId], references: [id])
 
-  items         OrderItem[]
-  statusHistory OrderStatusHistory[]
+  items            OrderItem[]
+  statusHistory    OrderStatusHistory[]
+  discountsGranted CustomerDiscount[]   @relation("DiscountGrantedFromOrder")
+  discountUsed     CustomerDiscount?    @relation("DiscountUsedInOrder")
 
   @@unique([businessId, orderNumber])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, source, createdAt])
   @@index([businessId, createdAt])
   @@index([businessId, status, createdAt])
 }
@@ -410,6 +482,49 @@ enum OrderStatus {
 enum OrderSource {
   PUBLIC
   RESTAURANT
+}
+
+enum OrderFulfillmentType {
+  DINE_IN
+  PICKUP
+}
+
+enum CustomerDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum CustomerDiscountStatus {
+  AVAILABLE
+  RESERVED
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+model CustomerDiscount {
+  id                 String                 @id @default(cuid())
+  businessId         String
+  customerId         String
+  grantedFromOrderId String?
+  usedOrderId        String?                @unique
+  type               CustomerDiscountType
+  value              Decimal                @db.Decimal(10, 2)
+  status             CustomerDiscountStatus @default(AVAILABLE)
+  expiresAt          DateTime?
+  reservedAt         DateTime?
+  usedAt             DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer         Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  grantedFromOrder Order?   @relation("DiscountGrantedFromOrder", fields: [grantedFromOrderId], references: [id], onDelete: SetNull)
+  usedOrder        Order?   @relation("DiscountUsedInOrder", fields: [usedOrderId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, customerId, status])
+  @@index([expiresAt])
+  @@index([grantedFromOrderId])
 }
 
 model OrderItem {
@@ -435,8 +550,9 @@ model OrderItemOption {
   id          String @id @default(cuid())
   orderItemId String
 
-  name  String
-  price Decimal @db.Decimal(10, 2)
+  name      String
+  groupName String?
+  price     Decimal @db.Decimal(10, 2)
 
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 }

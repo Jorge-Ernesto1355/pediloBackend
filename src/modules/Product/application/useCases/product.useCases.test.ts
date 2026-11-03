@@ -18,6 +18,7 @@ const product = Product.create({
   id: 'product-1',
   businessId: 'business-1',
   categoryId: 'category-1',
+  type: 'PRODUCT',
   name: 'Cola',
   description: null,
   price: 20,

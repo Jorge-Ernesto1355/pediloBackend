@@ -34,10 +34,36 @@ export interface MenuProductOptionGroup {
   updatedAt: Date;
 }
 
+export interface MenuComboComponent {
+  id: string;
+  productId: string;
+  sortOrder: number;
+  product: {
+    id: string;
+    name: string;
+    description: string | null;
+    price: number;
+    imageUrl: string | null;
+    categoryId: string;
+    isAvailable: boolean;
+  };
+}
+
+export interface MenuComboOptionGroup {
+  id: string;
+  comboProductId: string;
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  sortOrder: number;
+  products: MenuComboComponent[];
+}
+
 export interface MenuProduct {
   id: string;
   businessId: string;
   categoryId: string;
+  type: 'PRODUCT' | 'COMBO';
   name: string;
   description: string | null;
   price: number;
@@ -48,6 +74,8 @@ export interface MenuProduct {
   createdAt: Date;
   updatedAt: Date;
   optionGroups: MenuProductOptionGroup[];
+  includedProducts: MenuComboComponent[];
+  comboOptionGroups: MenuComboOptionGroup[];
 }
 
 export interface MenuProps {
@@ -75,6 +103,11 @@ export class Menu {
         ...category,
         products: category.products.map((product) => ({
           ...product,
+          includedProducts: product.includedProducts.map((included) => ({ ...included })),
+          comboOptionGroups: product.comboOptionGroups.map((group) => ({
+            ...group,
+            products: group.products.map((choice) => ({ ...choice })),
+          })),
           optionGroups: product.optionGroups.map((group) => ({
             ...group,
             options: group.options.map((option) => ({ ...option })),

@@ -31,6 +31,7 @@ export interface ProductProps {
   id: string;
   businessId: string;
   categoryId: string;
+  type: 'PRODUCT' | 'COMBO';
   name: string;
   description: string | null;
   price: number;

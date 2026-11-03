@@ -10,6 +10,7 @@ import {
   ProductAccessDeniedError,
   ProductBusinessNotFoundError,
   ProductHasOrdersError,
+  ProductUsedInComboError,
   ProductNotFoundError,
   ProductSameCategoryError,
   ProductTargetCategoryNotFoundError,
@@ -34,6 +35,7 @@ const productSelect = {
   id: true,
   businessId: true,
   categoryId: true,
+  type: true,
   category: { select: { id: true, name: true, description: true, menuId: true } },
   name: true,
   description: true,
@@ -316,6 +318,11 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
       await this.assertBusinessAccess(ownerUserId, product.businessId);
       const orderItems = await transaction.orderItem.count({ where: { productId: product.id } });
       if (orderItems > 0) throw new ProductHasOrdersError();
+      const [comboChoices, comboIncludes] = await Promise.all([
+        transaction.comboOptionProduct.count({ where: { productId: product.id } }),
+        transaction.comboIncludedProduct.count({ where: { productId: product.id } }),
+      ]);
+      if (comboChoices > 0 || comboIncludes > 0) throw new ProductUsedInComboError();
       await transaction.product.delete({ where: { id: product.id } });
       await normalizeCategoryOrder(transaction, product.categoryId);
       return true;
@@ -496,11 +503,14 @@ async function normalizeCategoryOrder(
     await transaction.product.update({ where: { id: product.id }, data: { sortOrder } });
 }
 
-async function toDomain(row: Prisma.ProductGetPayload<{ select: typeof productSelect }>): Promise<Product> {
+async function toDomain(
+  row: Prisma.ProductGetPayload<{ select: typeof productSelect }>,
+): Promise<Product> {
   const props: ProductProps = {
     id: row.id,
     businessId: row.businessId,
     categoryId: row.categoryId,
+    type: row.type,
     category: {
       id: row.category.id,
       name: row.category.name,
