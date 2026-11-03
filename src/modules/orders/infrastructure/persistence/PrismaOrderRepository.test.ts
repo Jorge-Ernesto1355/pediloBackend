@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { phoneSchema } from '@/shared/validation/phone.js';
 import { PrismaOrderRepository } from './PrismaOrderRepository.js';
+import { orderEventHub } from '@/modules/orders/infrastructure/sse/OrderEventHub.js';
 
 function orderRow() {
   const date = new Date();
@@ -35,8 +36,120 @@ function orderRow() {
 }
 
 describe('PrismaOrderRepository customer identity', () => {
+  it('resolves SSE access only for the authenticated owner business', async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      businessId: 'business-1',
+      business: { members: [{ id: 'member-1' }] },
+    });
+    const repository = new PrismaOrderRepository({
+      user: { findUnique },
+    } as unknown as PrismaClient);
+
+    await expect(repository.getEventsRestaurantId('owner-1')).resolves.toBe('business-1');
+    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'owner-1' } }));
+    findUnique.mockResolvedValueOnce({ businessId: 'business-1', business: { members: [] } });
+    await expect(repository.getEventsRestaurantId('staff-1')).resolves.toBeNull();
+  });
+
+  it('publishes the minimal order event after the database transaction commits', async () => {
+    const createdAt = new Date('2026-10-31T19:30:00.000Z');
+    const row = {
+      ...orderRow(),
+      createdAt,
+      items: [{ ...orderRow().items[0]!, product: { imageUrl: null } }],
+    };
+    const sequence: string[] = [];
+    const tx = {
+      business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
+      product: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'product-1',
+            businessId: 'business-1',
+            name: 'Producto',
+            price: new Prisma.Decimal(100),
+            isAvailable: true,
+            optionGroups: [
+              {
+                name: 'Extras',
+                isActive: true,
+                isRequired: false,
+                options: [
+                  {
+                    id: 'option-1',
+                    name: 'Queso',
+                    price: new Prisma.Decimal(5),
+                    isAvailable: true,
+                    minSelections: 0,
+                    maxSelections: 5,
+                  },
+                ],
+              },
+            ],
+            comboIncludes: [{ product: { name: 'Hamburguesa clásica' } }],
+          },
+        ]),
+      },
+      order: {
+        aggregate: vi.fn().mockResolvedValue({ _max: { orderNumber: 0 } }),
+        create: vi.fn().mockResolvedValue({ id: row.id, createdAt }),
+      },
+      customer: { upsert: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+        const result = await callback(tx);
+        sequence.push('commit');
+        return result;
+      }),
+      order: { findUnique: vi.fn().mockResolvedValue(row) },
+    } as unknown as PrismaClient;
+    const publish = vi.spyOn(orderEventHub, 'publishNewOrder').mockImplementation(() => {
+      sequence.push('publish');
+    });
+
+    await new PrismaOrderRepository(prisma).create('business-1', {
+      customer: { name: 'Jorge', phone: null },
+      items: [{ productId: 'product-1', quantity: 1, optionIds: ['option-1'] }],
+    });
+
+    expect(tx.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: {
+            create: [
+              expect.objectContaining({
+                options: {
+                  create: [
+                    {
+                      name: 'Hamburguesa clásica',
+                      groupName: 'Productos incluidos',
+                      price: 0,
+                    },
+                    { name: 'Queso', groupName: 'Extras', price: 5 },
+                  ],
+                },
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+    expect(sequence).toEqual(['commit', 'publish']);
+    expect(publish).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      restaurantId: 'business-1',
+      createdAt,
+      source: 'PUBLIC',
+    });
+    publish.mockRestore();
+  });
   it('reuses the existing customer when the phone belongs to a customer in the business', async () => {
-    const row = orderRow();
+    const row = {
+      ...orderRow(),
+      discountAmount: new Prisma.Decimal(10),
+      total: new Prisma.Decimal(90),
+    };
     const tx = {
       business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
       product: {
@@ -53,7 +166,7 @@ describe('PrismaOrderRepository customer identity', () => {
       },
       order: {
         aggregate: vi.fn().mockResolvedValue({ _max: { orderNumber: 0 } }),
-        create: vi.fn().mockResolvedValue({ id: row.id }),
+        create: vi.fn().mockResolvedValue({ id: row.id, createdAt: row.createdAt }),
       },
       customer: {
         upsert: vi.fn().mockResolvedValue({
@@ -64,6 +177,18 @@ describe('PrismaOrderRepository customer identity', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         }),
+      },
+      customerDiscount: {
+        updateMany: vi
+          .fn()
+          .mockResolvedValueOnce({ count: 0 })
+          .mockResolvedValueOnce({ count: 1 }),
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'discount-1',
+          type: 'PERCENTAGE',
+          value: new Prisma.Decimal(10),
+        }),
+        update: vi.fn().mockResolvedValue({}),
       },
     };
     const prisma = {
@@ -82,6 +207,21 @@ describe('PrismaOrderRepository customer identity', () => {
       update: {},
     });
     expect(tx.order.create.mock.calls[0]?.[0].data.source).toBe('PUBLIC');
+    expect(tx.order.create.mock.calls[0]?.[0].data).toMatchObject({
+      subtotal: 100,
+      discountAmount: 10,
+      total: 90,
+    });
+    expect(tx.customerDiscount.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'discount-1', status: 'AVAILABLE' }),
+        data: expect.objectContaining({ status: 'USED' }),
+      }),
+    );
+    expect(tx.customerDiscount.update).toHaveBeenCalledWith({
+      where: { id: 'discount-1' },
+      data: { usedOrderId: 'order-1' },
+    });
     expect(tx.order.create).toHaveBeenCalled();
   });
 
@@ -110,7 +250,7 @@ describe('PrismaOrderRepository customer identity', () => {
       },
       order: {
         aggregate: vi.fn().mockResolvedValue({ _max: { orderNumber: 30 } }),
-        create: vi.fn().mockResolvedValue({ id: row.id }),
+        create: vi.fn().mockResolvedValue({ id: row.id, createdAt: row.createdAt }),
       },
       customer: { upsert: vi.fn() },
     };

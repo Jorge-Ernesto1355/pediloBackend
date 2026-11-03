@@ -54,6 +54,9 @@ function logRequest(
       ...(includePayloads ? { result: sanitize(responseBodyFrom(body)) } : {}),
     },
     durationMs: Date.now() - startedAt,
+    ...(response.locals.orderStatusTimings
+      ? { timingsMs: response.locals.orderStatusTimings }
+      : {}),
     ...(response.locals.requestLoggerError
       ? {
           error:

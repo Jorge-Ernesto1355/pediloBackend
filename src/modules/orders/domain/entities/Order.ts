@@ -1,16 +1,17 @@
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
 export type OrderSource = 'PUBLIC' | 'RESTAURANT';
+export type OrderFulfillmentType = 'DINE_IN' | 'PICKUP';
 
 export interface OrderItemOptionProps {
   id: string;
   name: string;
+  groupName?: string | null;
   price: number;
 }
 export interface OrderItemProps {
   id: string;
   productId: string;
   productName: string;
-  productImageUrl: string | null;
   unitPrice: number;
   quantity: number;
   subtotal: number;
@@ -23,7 +24,9 @@ export interface OrderProps {
   orderNumber: number;
   status: OrderStatus;
   source: OrderSource;
+  fulfillmentType: OrderFulfillmentType;
   subtotal: number;
+  discountAmount: number;
   total: number;
   customerName: string | null;
   customerPhone: string | null;
