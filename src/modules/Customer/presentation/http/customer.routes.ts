@@ -7,6 +7,8 @@ import { DeleteCustomer } from '../../application/useCases/DeleteCustomer.js';
 import { GetCustomer } from '../../application/useCases/GetCustomer.js';
 import { ListCustomers } from '../../application/useCases/ListCustomers.js';
 import { UpdateCustomer } from '../../application/useCases/UpdateCustomer.js';
+import { GetCustomerOrders } from '../../application/useCases/GetCustomerOrders.js';
+import { SetCustomerDisabled } from '../../application/useCases/SetCustomerDisabled.js';
 import { PrismaCustomerRepository } from '../../infrastructure/persistence/PrismaCustomerRepository.js';
 import { CustomerController } from './CustomerController.js';
 const repository = new PrismaCustomerRepository(prisma);
@@ -16,11 +18,15 @@ const controller = new CustomerController(
   new ListCustomers(repository),
   new UpdateCustomer(repository),
   new DeleteCustomer(repository),
+  new GetCustomerOrders(repository),
+  new SetCustomerDisabled(repository),
 );
 const requireAuth = createRequireAuth(authProvider);
 export const customerRouter = Router();
 customerRouter.post('/:businessId/customers', requireAuth, controller.create);
 customerRouter.get('/:businessId/customers', requireAuth, controller.list);
 customerRouter.get('/customers/:customerId', requireAuth, controller.get);
+customerRouter.get('/customers/:customerId/orders', requireAuth, controller.orders);
 customerRouter.patch('/customers/:customerId', requireAuth, controller.update);
+customerRouter.patch('/customers/:customerId/status', requireAuth, controller.setDisabled);
 customerRouter.delete('/customers/:customerId', requireAuth, controller.remove);

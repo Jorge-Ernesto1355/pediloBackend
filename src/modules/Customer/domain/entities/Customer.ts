@@ -3,6 +3,7 @@ export interface CustomerProps {
   businessId: string;
   name: string;
   phone: string;
+  isDisabled: boolean;
   createdAt: Date;
   updatedAt: Date;
   orderCount?: number;

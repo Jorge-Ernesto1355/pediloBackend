@@ -29,3 +29,8 @@ export class CustomerPhoneAlreadyExistsError extends AppError {
     );
   }
 }
+export class CustomerDisabledError extends AppError {
+  constructor() {
+    super('This customer is disabled and cannot place orders', 403, 'CUSTOMER_DISABLED');
+  }
+}

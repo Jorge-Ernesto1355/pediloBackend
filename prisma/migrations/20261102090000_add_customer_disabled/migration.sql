@@ -1,0 +1,1 @@
+ALTER TABLE "Customer" ADD COLUMN "isDisabled" BOOLEAN NOT NULL DEFAULT false;

@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Customer, CustomerProps } from '../../domain/entities/Customer.js';
-import { CustomerRepository } from '../../application/ports/CustomerRepository.js';
+import { CustomerOrderHistory, CustomerRepository } from '../../application/ports/CustomerRepository.js';
 import {
   CreateCustomerDTO,
   ListCustomersDTO,
@@ -108,6 +108,48 @@ export class PrismaCustomerRepository implements CustomerRepository {
     await this.prisma.customer.delete({ where: { id: customerId } });
     return true;
   }
+  async setDisabled(ownerUserId: string, customerId: string, disabled: boolean): Promise<Customer | null> {
+    const existing = await this.getById(ownerUserId, customerId);
+    if (!existing) return null;
+    const row = await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { isDisabled: disabled },
+      include: customerFinancialsInclude,
+    });
+    return toDomain(row);
+  }
+  async listOrders(ownerUserId: string, customerId: string, page: number, limit: number): Promise<{ orders: CustomerOrderHistory[]; total: number } | null> {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, business: { users: { some: { id: ownerUserId } } } },
+      select: { businessId: true },
+    });
+    if (!customer) return null;
+    const where = { customerId, businessId: customer.businessId };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { items: { include: { options: true }, orderBy: { id: 'asc' } } },
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return {
+      orders: rows.map((row) => ({
+        id: row.id, orderNumber: row.orderNumber, status: row.status,
+        total: row.total.toNumber(), subtotal: row.subtotal.toNumber(),
+        discountAmount: row.discountAmount.toNumber(), notes: row.notes,
+        fulfillmentType: row.fulfillmentType, createdAt: row.createdAt,
+        items: row.items.map((item) => ({
+          id: item.id, productName: item.productName, quantity: item.quantity,
+          unitPrice: item.unitPrice.toNumber(), subtotal: item.subtotal.toNumber(),
+          options: item.options.map((option) => ({ name: option.name, groupName: option.groupName, price: option.price.toNumber() })),
+        })),
+      })),
+      total,
+    };
+  }
   private async assertAccess(ownerUserId: string, businessId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: ownerUserId },
@@ -137,6 +179,7 @@ function toDomain(row: {
   businessId: string;
   name: string | null;
   phone: string;
+  isDisabled: boolean;
   createdAt: Date;
   updatedAt: Date;
   _count?: { orders: number };
@@ -147,6 +190,7 @@ function toDomain(row: {
     businessId: row.businessId,
     name: row.name ?? '',
     phone: row.phone,
+    isDisabled: row.isDisabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     orderCount: row._count?.orders,

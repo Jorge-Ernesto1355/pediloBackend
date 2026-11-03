@@ -4,11 +4,15 @@ import { DeleteCustomer } from '../../application/useCases/DeleteCustomer.js';
 import { GetCustomer } from '../../application/useCases/GetCustomer.js';
 import { ListCustomers } from '../../application/useCases/ListCustomers.js';
 import { UpdateCustomer } from '../../application/useCases/UpdateCustomer.js';
+import { GetCustomerOrders } from '../../application/useCases/GetCustomerOrders.js';
+import { SetCustomerDisabled } from '../../application/useCases/SetCustomerDisabled.js';
 import {
   businessIdSchema,
   customerIdSchema,
   customerListSchema,
+  customerOrdersSchema,
   customerSchema,
+  customerStatusSchema,
   updateCustomerSchema,
 } from './customer.schemas.js';
 
@@ -19,6 +23,8 @@ export class CustomerController {
     private readonly listCustomers: ListCustomers,
     private readonly updateCustomer: UpdateCustomer,
     private readonly deleteCustomer: DeleteCustomer,
+    private readonly getCustomerOrders: GetCustomerOrders,
+    private readonly setCustomerDisabled: SetCustomerDisabled,
   ) {}
   create = (req: Request, res: Response) => {
     const params = businessIdSchema.safeParse(req.params);
@@ -71,6 +77,26 @@ export class CustomerController {
     return this.deleteCustomer
       .execute(req.user!.id, params.data.customerId)
       .then(() => res.status(204).send())
+      .catch((error) => handle(res, error));
+  };
+  setDisabled = (req: Request, res: Response) => {
+    const params = customerIdSchema.safeParse(req.params);
+    const body = customerStatusSchema.safeParse(req.body);
+    if (!params.success) return bad(res, params.error);
+    if (!body.success) return bad(res, body.error);
+    return this.setCustomerDisabled
+      .execute(req.user!.id, params.data.customerId, body.data.disabled)
+      .then((customer) => res.json({ customer: customer.toJSON() }))
+      .catch((error) => handle(res, error));
+  };
+  orders = (req: Request, res: Response) => {
+    const params = customerIdSchema.safeParse(req.params);
+    const query = customerOrdersSchema.safeParse(req.query);
+    if (!params.success) return bad(res, params.error);
+    if (!query.success) return bad(res, query.error);
+    return this.getCustomerOrders
+      .execute(req.user!.id, params.data.customerId, query.data.page, query.data.limit)
+      .then(({ orders, total }) => res.json({ orders, page: query.data.page, limit: query.data.limit, total }))
       .catch((error) => handle(res, error));
   };
 }
