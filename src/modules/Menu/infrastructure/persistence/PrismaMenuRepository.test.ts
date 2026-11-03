@@ -42,6 +42,8 @@ describe('PrismaMenuRepository catalog', () => {
                 isAvailable: true,
                 createdAt: new Date('2026-01-01'),
                 updatedAt: new Date('2026-01-01'),
+                comboIncludes: [],
+                comboOptionGroups: [],
                 optionGroups: [
                   {
                     id: 'group-1',
