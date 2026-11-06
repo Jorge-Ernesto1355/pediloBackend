@@ -27,6 +27,7 @@ const requireAuth = createRequireAuth(authProvider);
 
 export const publicBusinessRouter = Router();
 publicBusinessRouter.get('/businesses/:slug/catalog', controller.getCatalog);
+publicBusinessRouter.get('/businesses/:slug/discounts', controller.getDiscounts);
 
 export const storeVisitRouter = Router();
 storeVisitRouter.get('/store-visits/stats', requireAuth, statsController.get);

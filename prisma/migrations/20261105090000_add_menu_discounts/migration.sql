@@ -1,0 +1,18 @@
+CREATE TYPE "DiscountType" AS ENUM ('PERCENT', 'FIXED');
+CREATE TYPE "DiscountScope" AS ENUM ('PRODUCTS', 'CATEGORIES', 'MENU');
+CREATE TABLE "discounts" ("id" TEXT NOT NULL, "businessId" TEXT NOT NULL, "name" VARCHAR(60) NOT NULL, "type" "DiscountType" NOT NULL DEFAULT 'PERCENT', "value" DECIMAL(10,2) NOT NULL, "scope" "DiscountScope" NOT NULL, "startsAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "endsAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "discounts_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "discount_products" ("discountId" TEXT NOT NULL, "productId" TEXT NOT NULL, CONSTRAINT "discount_products_pkey" PRIMARY KEY ("discountId","productId"));
+CREATE TABLE "discount_categories" ("discountId" TEXT NOT NULL, "categoryId" TEXT NOT NULL, CONSTRAINT "discount_categories_pkey" PRIMARY KEY ("discountId","categoryId"));
+CREATE TABLE "discount_menus" ("discountId" TEXT NOT NULL, "menuId" TEXT NOT NULL, CONSTRAINT "discount_menus_pkey" PRIMARY KEY ("discountId","menuId"));
+ALTER TABLE "OrderItem" ADD COLUMN "unitPriceOriginal" DECIMAL(10,2) NOT NULL DEFAULT 0, ADD COLUMN "discountAmount" DECIMAL(10,2) NOT NULL DEFAULT 0, ADD COLUMN "unitPriceFinal" DECIMAL(10,2) NOT NULL DEFAULT 0, ADD COLUMN "discountId" TEXT, ADD COLUMN "discountLabel" TEXT;
+CREATE INDEX "discounts_businessId_idx" ON "discounts"("businessId");
+CREATE INDEX "discounts_businessId_endsAt_idx" ON "discounts"("businessId","endsAt");
+CREATE INDEX "OrderItem_discountId_idx" ON "OrderItem"("discountId");
+ALTER TABLE "discounts" ADD CONSTRAINT "discounts_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_products" ADD CONSTRAINT "discount_products_discountId_fkey" FOREIGN KEY ("discountId") REFERENCES "discounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_products" ADD CONSTRAINT "discount_products_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_categories" ADD CONSTRAINT "discount_categories_discountId_fkey" FOREIGN KEY ("discountId") REFERENCES "discounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_categories" ADD CONSTRAINT "discount_categories_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_menus" ADD CONSTRAINT "discount_menus_discountId_fkey" FOREIGN KEY ("discountId") REFERENCES "discounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "discount_menus" ADD CONSTRAINT "discount_menus_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Menu"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_discountId_fkey" FOREIGN KEY ("discountId") REFERENCES "discounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -42,3 +42,9 @@ export class OrderPriceChangedError extends AppError {
     };
   }
 }
+
+export class OrderTransferUnavailableError extends AppError {
+  constructor() {
+    super('Transfer payments are not available for this restaurant', 400, 'PAYMENT_CARD_UNAVAILABLE');
+  }
+}

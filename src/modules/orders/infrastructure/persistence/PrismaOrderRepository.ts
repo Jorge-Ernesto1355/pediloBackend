@@ -1,10 +1,11 @@
 import {
   OrderSource as PrismaOrderSource,
+  OrderPaymentMethod as PrismaOrderPaymentMethod,
   OrderStatus as PrismaOrderStatus,
   Prisma,
   PrismaClient,
 } from '@prisma/client';
-import { Order, OrderProps, OrderSource, OrderStatus } from '../../domain/entities/Order.js';
+import { Order, OrderProps, OrderSource, OrderStatus, OrderPaymentMethod } from '../../domain/entities/Order.js';
 import { CreateOrderDTO, ListOrdersDTO } from '../../application/dto/OrderDTO.js';
 import { OrderRepository, OrderStatusTimings } from '../../application/ports/OrderRepository.js';
 import {
@@ -14,6 +15,7 @@ import {
   OrderInvalidStatusTransitionError,
   OrderProductNotFoundError,
   OrderPriceChangedError,
+  OrderTransferUnavailableError,
 } from '../../domain/errors/OrderErrors.js';
 import { normalizePhone } from '@/shared/validation/phone.js';
 import { getBusinessPeriodRange } from '@/shared/time/business-period.js';
@@ -22,6 +24,7 @@ import { calculateCustomerDiscountAmount } from '@/modules/CustomerDiscount/doma
 import { CustomerDiscountApplicationFailedError } from '@/modules/CustomerDiscount/domain/CustomerDiscountErrors.js';
 import { CustomerDisabledError } from '@/modules/Customer/domain/errors/CustomerErrors.js';
 import { resolveComboSelections } from '../../domain/comboSelection.js';
+import { bestDiscountFor, priceWithDiscount } from '@/modules/Discount/domain/pricing.js';
 
 const orderInclude = {
   items: {
@@ -94,18 +97,28 @@ export class PrismaOrderRepository implements OrderRepository {
       async (tx) => {
         const business = await tx.business.findUnique({
           where: { id: businessId },
-          select: { id: true },
+          select: { id: true, paymentCard: { where: { isActive: true } } },
         });
         if (!business) throw new OrderBusinessNotFoundError();
+        if (input.paymentMethod === 'TRANSFER' && !business.paymentCard) {
+          throw new OrderTransferUnavailableError();
+        }
         const productIds = input.items.map((item) => item.productId);
         const products = await tx.product.findMany({
           where: { id: { in: productIds }, businessId, isAvailable: true },
           include: {
+            category: { select: { menuId: true } },
             optionGroups: { include: { options: true } },
             comboOptionGroups: { include: { products: { include: { product: true } } } },
             comboIncludes: { include: { product: true } },
           },
         });
+        const menuDiscounts = tx.discount?.findMany
+          ? await tx.discount.findMany({
+              where: { businessId, status: 'ACTIVE', startsAt: { lte: new Date() }, endsAt: { gt: new Date() } },
+          include: { products: true, categories: true, menus: true },
+            })
+          : [];
         const productMap = new Map(products.map((product) => [product.id, product]));
         const items: {
           productId: string;
@@ -113,6 +126,11 @@ export class PrismaOrderRepository implements OrderRepository {
           unitPrice: number;
           quantity: number;
           subtotal: number;
+          unitPriceOriginal: number;
+          unitPriceFinal: number;
+          discountAmount: number;
+          discountId: string | null;
+          discountLabel: string | null;
           options: { name: string; groupName: string | null; price: number }[];
         }[] = [];
         for (const requested of input.items) {
@@ -163,25 +181,40 @@ export class PrismaOrderRepository implements OrderRepository {
           const selected = selectedIds
             .map((optionId) => availableOptions.find((option) => option.id === optionId))
             .filter((option): option is (typeof availableOptions)[number] => Boolean(option));
-          const unitPrice =
+          const unitPriceOriginal =
             product.price.toNumber() +
             selected.reduce((sum, option) => sum + option.price.toNumber(), 0);
+          const discount = bestDiscountFor(
+            { id: product.id, price: unitPriceOriginal, categoryId: product.categoryId, menuId: product.category?.menuId },
+            menuDiscounts.map((entry) => ({
+              id: entry.id, name: entry.name, type: entry.type, value: Number(entry.value),
+              startsAt: entry.startsAt, endsAt: entry.endsAt, createdAt: entry.createdAt,
+              target: { scope: entry.scope, productIds: entry.products.map((item) => item.productId), categoryIds: entry.categories.map((item) => item.categoryId), menuIds: entry.menus.map((item) => item.menuId) },
+            })),
+            new Date(),
+          );
+          const unitPriceFinal = discount ? priceWithDiscount(unitPriceOriginal, discount) : unitPriceOriginal;
           const groupNameByOptionId = new Map(
             activeGroups.flatMap((group) =>
               group.options.map((option) => [option.id, group.name] as const),
             ),
           );
           const includedComboProducts = (product.comboIncludes ?? []).map((included) => ({
-            name: included.product.name,
+            name: `${included.quantity > 1 ? `${included.quantity}× ` : ''}${included.product.name}`,
             groupName: 'Productos incluidos',
             price: 0,
           }));
           items.push({
             productId: product.id,
             productName: product.name,
-            unitPrice,
+            unitPrice: unitPriceFinal,
+            unitPriceOriginal,
+            unitPriceFinal,
+            discountAmount: Math.max(0, unitPriceOriginal - unitPriceFinal),
+            discountId: discount?.id ?? null,
+            discountLabel: discount ? (discount.type === 'PERCENT' ? `-${discount.value}%` : `-$${discount.value.toFixed(2)}`) : null,
             quantity: requested.quantity,
-            subtotal: unitPrice * requested.quantity,
+            subtotal: unitPriceFinal * requested.quantity,
             options: [
               ...includedComboProducts,
               ...selected.map((option) => ({
@@ -196,11 +229,24 @@ export class PrismaOrderRepository implements OrderRepository {
         const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
         if (
           source === 'PUBLIC' &&
-          input.expectedSubtotal !== undefined &&
-          !input.acceptPriceChange &&
-          Math.abs(subtotal - input.expectedSubtotal) >= 0.01
+          !input.acceptPriceChange
         ) {
-          throw new OrderPriceChangedError(input.expectedSubtotal, subtotal);
+          const expectedItems = input.items.flatMap((requested) => {
+            const expected = requested.expectedUnitPrice ?? requested.expected_unit_price;
+            return expected === undefined ? [] : [{ expected, quantity: requested.quantity }];
+          });
+          const hasItemPriceChange = input.items.some((requested, index) => {
+            const expected = requested.expectedUnitPrice ?? requested.expected_unit_price;
+            const item = items[index];
+            return item !== undefined && expected !== undefined && Math.abs(expected - item.unitPriceFinal) >= 0.01;
+          });
+          if (input.expectedSubtotal !== undefined || expectedItems.length > 0) {
+            const expectedItemSubtotal = expectedItems.reduce((sum, item) => sum + item.expected * item.quantity, 0);
+            const expectedSubtotal = input.expectedSubtotal ?? expectedItemSubtotal;
+            if (hasItemPriceChange || Math.abs(subtotal - expectedSubtotal) >= 0.01) {
+              throw new OrderPriceChangedError(expectedSubtotal, subtotal);
+            }
+          }
         }
         const last = await tx.order.aggregate({
           where: { businessId },
@@ -218,7 +264,8 @@ export class PrismaOrderRepository implements OrderRepository {
         if (source === 'PUBLIC' && savedCustomer?.isDisabled) throw new CustomerDisabledError();
         let appliedDiscountId: string | null = null;
         let discountAmount = 0;
-        if (source === 'PUBLIC' && savedCustomer && !input.ignoreCustomerDiscount) {
+        const hasProductDiscount = items.some((item) => item.discountAmount > 0);
+        if (source === 'PUBLIC' && savedCustomer && !input.ignoreCustomerDiscount && !hasProductDiscount) {
           const now = new Date();
           await tx.customerDiscount.updateMany({
             where: {
@@ -270,6 +317,7 @@ export class PrismaOrderRepository implements OrderRepository {
             status: 'PENDING',
             source,
             fulfillmentType: input.fulfillmentType ?? 'DINE_IN',
+            paymentMethod: (input.paymentMethod ?? 'CASH') as PrismaOrderPaymentMethod,
             subtotal,
             discountAmount,
             total: Math.max(0, subtotal - discountAmount),
@@ -322,7 +370,18 @@ export class PrismaOrderRepository implements OrderRepository {
       include: orderInclude,
     });
     if (!order) throw new Error('Created order could not be loaded');
-    return await toDomain(order);
+    const mapped = await toDomain(order);
+    if (mapped.toJSON().paymentMethod === 'TRANSFER') {
+      const card = await this.prisma.restaurantPaymentCard.findUnique({
+        where: { businessId },
+        select: { clabe: true, beneficiaryName: true, bankCode: true, bankName: true, business: { select: { name: true } } },
+      });
+      if (card) {
+        const props = mapped.toJSON();
+        return Order.create({ ...props, transferCard: { ...card, restaurantName: card.business.name } });
+      }
+    }
+    return mapped;
   }
 
   async getById(ownerUserId: string, orderId: string): Promise<Order | null> {
@@ -541,6 +600,7 @@ async function toDomain(
     status: row.status as OrderStatus,
     source: row.source as OrderSource,
     fulfillmentType: row.fulfillmentType ?? 'DINE_IN',
+    paymentMethod: (row.paymentMethod ?? 'CASH') as OrderPaymentMethod,
     subtotal: row.subtotal.toNumber(),
     discountAmount: row.discountAmount?.toNumber() ?? 0,
     total: row.total.toNumber(),
@@ -554,6 +614,11 @@ async function toDomain(
       productId: item.productId,
       productName: item.productName,
       unitPrice: item.unitPrice.toNumber(),
+      unitPriceOriginal: item.unitPriceOriginal?.toNumber?.() ?? item.unitPrice.toNumber(),
+      unitPriceFinal: item.unitPriceFinal?.toNumber?.() ?? item.unitPrice.toNumber(),
+      discountAmount: item.discountAmount?.toNumber?.() ?? 0,
+      discountId: item.discountId,
+      discountLabel: item.discountLabel,
       quantity: item.quantity,
       subtotal: item.subtotal.toNumber(),
       options: item.options.map((option) => ({

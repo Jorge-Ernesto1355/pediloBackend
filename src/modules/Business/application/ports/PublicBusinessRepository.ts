@@ -9,6 +9,8 @@ export interface PublicBusinessCatalog {
     coverUrl: string | null;
     coverBlurUrl: string | null;
     whatsappNumber: string | null;
+    paymentCardAvailable: boolean;
+    payment_card_available?: boolean;
     ubication: string | null;
     ubicationMaps: { latitude: number; longitude: number } | null;
     businessSchedule: {
@@ -52,6 +54,11 @@ export interface PublicProduct {
   name: string;
   description: string | null;
   price: number;
+  priceOriginal?: number;
+  priceFinal?: number;
+  price_original?: number;
+  price_final?: number;
+  discount?: { id: string; name: string; type: 'PERCENT' | 'FIXED'; value: number; label: string; endsAt: Date } | null;
   imageUrl: string | null;
   sortOrder: number;
   isAvailable: boolean;
@@ -89,4 +96,14 @@ export interface PublicOption {
 
 export interface PublicBusinessRepository {
   getCatalogBySlug(slug: string): Promise<PublicBusinessCatalog | null>;
+  getActiveDiscountsBySlug(slug: string): Promise<PublicDiscountPrice[] | null>;
+}
+
+export interface PublicDiscountPrice {
+  productId: string;
+  priceOriginal: number;
+  priceFinal: number;
+  price_original: number;
+  price_final: number;
+  discount: NonNullable<PublicProduct['discount']> | null;
 }

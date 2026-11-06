@@ -20,6 +20,15 @@ describe('order list period validation', () => {
 });
 
 describe('order creation schemas', () => {
+  it('accepts the public snake_case payment method', () => {
+    const parsed = createOrderSchema.safeParse({
+      customer: { name: 'Juan', phone: '6681234567' },
+      items: [{ productId: 'p1', quantity: 1 }],
+      payment_method: 'transfer',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('keeps public phone required', () => {
     expect(
       createOrderSchema.safeParse({

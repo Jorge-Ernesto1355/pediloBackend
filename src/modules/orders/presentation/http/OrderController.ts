@@ -29,7 +29,12 @@ export class OrderController {
     if (!params.success) return bad(res, params.error);
     if (!body.success) return bad(res, body.error);
     return this.createOrder
-      .execute(params.data.businessId, body.data)
+      .execute(params.data.businessId, {
+        ...body.data,
+        paymentMethod:
+          body.data.paymentMethod ??
+          (body.data.payment_method === 'transfer' ? 'TRANSFER' : body.data.payment_method === 'cash' ? 'CASH' : undefined),
+      })
       .then((order) => res.status(201).json({ order: order.toJSON() }))
       .catch((error) => handle(res, error));
   };

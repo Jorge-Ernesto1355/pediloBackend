@@ -1,6 +1,14 @@
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
 export type OrderSource = 'PUBLIC' | 'RESTAURANT';
 export type OrderFulfillmentType = 'DINE_IN' | 'PICKUP';
+export type OrderPaymentMethod = 'CASH' | 'TRANSFER';
+export interface TransferCardSnapshot {
+  clabe: string;
+  beneficiaryName: string;
+  bankCode: string;
+  bankName: string;
+  restaurantName: string;
+}
 
 export interface OrderItemOptionProps {
   id: string;
@@ -13,6 +21,11 @@ export interface OrderItemProps {
   productId: string;
   productName: string;
   unitPrice: number;
+  unitPriceOriginal?: number;
+  unitPriceFinal?: number;
+  discountAmount?: number;
+  discountId?: string | null;
+  discountLabel?: string | null;
   quantity: number;
   subtotal: number;
   options: OrderItemOptionProps[];
@@ -25,6 +38,9 @@ export interface OrderProps {
   status: OrderStatus;
   source: OrderSource;
   fulfillmentType: OrderFulfillmentType;
+  paymentMethod: OrderPaymentMethod;
+  payment_method?: 'cash' | 'transfer';
+  transferCard?: TransferCardSnapshot;
   subtotal: number;
   discountAmount: number;
   total: number;
@@ -45,6 +61,7 @@ export class Order {
   toJSON(): OrderProps {
     return {
       ...this.props,
+      payment_method: this.props.paymentMethod.toLowerCase() as 'cash' | 'transfer',
       items: this.props.items.map((item) => ({
         ...item,
         options: item.options.map((option) => ({ ...option })),

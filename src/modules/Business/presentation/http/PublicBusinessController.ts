@@ -38,4 +38,16 @@ export class PublicBusinessController {
       });
     }
   };
+
+  getDiscounts = async (request: Request, response: Response) => {
+    const parsed = businessSlugSchema.safeParse(request.params);
+    if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() });
+    try {
+      const discounts = await this.getCatalogUseCase.executeDiscounts(parsed.data.slug);
+      if (!discounts) return response.status(404).json({ error: { code: 'PUBLIC_BUSINESS_NOT_FOUND', message: 'Business not found' } });
+      return response.json({ discounts });
+    } catch {
+      return response.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error' } });
+    }
+  };
 }

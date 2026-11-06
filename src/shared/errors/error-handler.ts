@@ -14,6 +14,13 @@ function toPublicError(error: unknown): { statusCode: number; code: string; mess
 
   if (error instanceof Error) {
     const candidate = error as Error & { statusCode?: unknown; code?: unknown };
+    if (candidate.code === 'P2021' || candidate.code === 'P2022') {
+      return {
+        statusCode: 503,
+        code: 'DISCOUNT_STORAGE_UNAVAILABLE',
+        message: 'Los descuentos no están disponibles temporalmente. Inténtalo nuevamente en unos momentos.',
+      };
+    }
     if (
       typeof candidate.statusCode === 'number' &&
       typeof candidate.code === 'string' &&

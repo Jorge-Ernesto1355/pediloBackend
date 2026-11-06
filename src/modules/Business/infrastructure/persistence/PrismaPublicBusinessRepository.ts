@@ -1,9 +1,11 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { DiscountStatus, Prisma, PrismaClient } from '@prisma/client';
 import {
   PublicBusinessCatalog,
+  PublicDiscountPrice,
   PublicBusinessRepository,
 } from '../../application/ports/PublicBusinessRepository.js';
 import { resolveProductImageUrl } from '@/shared/images/product-image.js';
+import { bestDiscountFor, formatLabel } from '@/modules/Discount/domain/pricing.js';
 
 const catalogInclude = {
   businessSchedule: true,
@@ -57,20 +59,20 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
   constructor(private readonly prisma: PrismaClient) {}
 
   async getCatalogBySlug(slug: string): Promise<PublicBusinessCatalog | null> {
-    console.log('slug', slug);
-
     const row = await this.prisma.business.findUnique({
       where: { slug },
       include: catalogInclude,
     });
 
-    console.log(slug);
     if (!row) return null;
 
     const settings = await this.prisma.businessSettings.findUnique({
       where: { businessId: row.id },
       select: { whatsapp: true },
     });
+    const paymentCardAvailable = Boolean(
+      await this.prisma.restaurantPaymentCard.findFirst({ where: { businessId: row.id, isActive: true }, select: { id: true } }),
+    );
 
     return {
       business: {
@@ -86,6 +88,8 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
           row.coverBlurUrl ?? row.images.find((image) => image.type === 'COVER')?.blurUrl ?? null,
         ubication: row.ubication,
         whatsappNumber: settings?.whatsapp ?? null,
+        paymentCardAvailable,
+        payment_card_available: paymentCardAvailable,
         ubicationMaps: row.ubicationMaps
           ? {
               latitude: row.ubicationMaps.latitude.toNumber(),
@@ -121,7 +125,7 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
               isActive: category.isActive,
               createdAt: category.createdAt,
               updatedAt: category.updatedAt,
-              products: await Promise.all(
+                products: await Promise.all(
                 category.products.map(async (product) => ({
                   id: product.id,
                   businessId: product.businessId,
@@ -130,6 +134,11 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
                   name: product.name,
                   description: product.description,
                   price: product.price.toNumber(),
+                  priceOriginal: product.price.toNumber(),
+                  priceFinal: product.price.toNumber(),
+                  price_original: product.price.toNumber(),
+                  price_final: product.price.toNumber(),
+                  discount: null,
                   imageUrl: await resolveProductImageUrl(product.imageUrl),
                   sortOrder: product.sortOrder,
                   isAvailable:
@@ -216,5 +225,47 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
         })),
       ),
     };
+  }
+
+  async getActiveDiscountsBySlug(slug: string): Promise<PublicDiscountPrice[] | null> {
+    const catalog = await this.getCatalogBySlug(slug);
+    if (!catalog) return null;
+
+    const discounts = await this.prisma.discount.findMany({
+      where: { businessId: catalog.business.id, status: DiscountStatus.ACTIVE, startsAt: { lte: new Date() }, endsAt: { gt: new Date() } },
+      include: { products: true, categories: true, menus: true },
+    });
+    const pricingDiscounts = discounts.map((discount) => ({
+      id: discount.id,
+      name: discount.name,
+      type: discount.type,
+      value: Number(discount.value),
+      startsAt: discount.startsAt,
+      endsAt: discount.endsAt,
+      createdAt: discount.createdAt,
+      target: {
+        scope: discount.scope,
+        productIds: discount.products.map((item) => item.productId),
+        categoryIds: discount.categories.map((item) => item.categoryId),
+        menuIds: discount.menus.map((item) => item.menuId),
+      },
+    }));
+
+    return catalog.menus.flatMap((menu) => menu.categories.flatMap((category) => category.products.map((product) => {
+      const selected = bestDiscountFor({ id: product.id, price: product.price, categoryId: product.categoryId, menuId: menu.id }, pricingDiscounts, new Date());
+      const finalPrice = selected?.type === 'PERCENT'
+        ? Math.round(product.price * (100 - selected.value)) / 100
+        : selected
+          ? Math.max(0, Math.round((product.price - selected.value) * 100) / 100)
+          : product.price;
+      return {
+        productId: product.id,
+        priceOriginal: product.price,
+        priceFinal: finalPrice,
+        price_original: product.price,
+        price_final: finalPrice,
+        discount: selected ? { id: selected.id, name: selected.name ?? 'Descuento', type: selected.type, value: selected.value, label: formatLabel(selected), endsAt: selected.endsAt } : null,
+      };
+    })));
   }
 }

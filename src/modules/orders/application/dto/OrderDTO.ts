@@ -1,13 +1,16 @@
-import { OrderFulfillmentType, OrderStatus } from '../../domain/entities/Order.js';
+import { OrderFulfillmentType, OrderPaymentMethod, OrderStatus } from '../../domain/entities/Order.js';
 
 export interface CreateOrderDTO {
   customer: { name: string | null; phone: string | null };
-  items: { productId: string; quantity: number; optionIds?: string[]; comboChoiceIds?: string[] }[];
+  items: { productId: string; quantity: number; optionIds?: string[]; comboChoiceIds?: string[]; expectedUnitPrice?: number; expected_unit_price?: number }[];
   fulfillmentType?: OrderFulfillmentType;
   notes?: string | null;
   ignoreCustomerDiscount?: boolean;
   expectedSubtotal?: number;
+  expected_total?: number;
+  expectedTotal?: number;
   acceptPriceChange?: boolean;
+  paymentMethod?: OrderPaymentMethod;
 }
 export interface ListOrdersDTO {
   businessId: string;

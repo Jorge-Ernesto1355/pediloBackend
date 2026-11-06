@@ -17,7 +17,9 @@ import { auth } from './libs/auth';
 import { errorHandler } from './shared/errors/error-handler.js';
 import { customerRouter } from './modules/Customer/presentation/http/customer.routes.js';
 import { customerDiscountRouter } from './modules/CustomerDiscount/presentation/http/customer-discount.routes.js';
+import { discountRouter } from './modules/Discount/presentation/http/discount.routes.js';
 import { orderRouter } from './modules/orders/presentation/http/order.routes.js';
+import { paymentCardRouter } from './modules/Business/presentation/http/payment-card.routes.js';
 import { orderEventsRouter } from './modules/orders/presentation/http/order-events.routes.js';
 import { requestLogger, requestLoggerErrorHandler } from './shared/config/http/request-logger.js';
 import { salesRouter } from './modules/dashboard/presentation/http/sales.routes.js';
@@ -67,6 +69,7 @@ export function createApp() {
   app.use('/api/v1/account', accountRouter);
   // Debe ir antes de businessRouter porque ese router contiene GET /:id.
   app.use('/api/v1/businesses', businessSettingsRouter);
+  app.use('/api/v1/businesses', paymentCardRouter);
   app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
   app.use('/api/v1/businesses', businessRouter);
@@ -78,6 +81,7 @@ export function createApp() {
   app.use('/api/v1/businesses', comboOptionRouter);
   app.use('/api/v1/businesses', customerRouter);
   app.use('/api/v1/businesses', customerDiscountRouter);
+  app.use('/api/v1/businesses', discountRouter);
   app.use('/api/v1/businesses', orderRouter);
   app.use('/api/orders', orderEventsRouter);
   app.use('/api/v1/public', publicBusinessRouter);

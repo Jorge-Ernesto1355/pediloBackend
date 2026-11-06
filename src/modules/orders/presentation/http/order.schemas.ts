@@ -8,6 +8,8 @@ const itemSchema = z
     quantity: z.number().int().min(1).max(100),
     optionIds: z.array(z.string().trim().min(1)).max(50).optional(),
     comboChoiceIds: z.array(z.string().trim().min(1)).max(50).optional(),
+    expectedUnitPrice: z.number().finite().nonnegative().optional(),
+    expected_unit_price: z.number().finite().nonnegative().optional(),
   })
   .strict();
 export const createOrderSchema = z
@@ -15,9 +17,13 @@ export const createOrderSchema = z
     customer: z.object({ name: z.string().trim().min(1).max(20), phone: phoneSchema }).strict(),
     items: z.array(itemSchema).min(1).max(100),
     fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
+    paymentMethod: z.enum(['CASH', 'TRANSFER']).optional(),
+    payment_method: z.enum(['cash', 'transfer']).optional(),
     notes: z.string().trim().max(200).nullable().optional(),
     ignoreCustomerDiscount: z.boolean().optional(),
     expectedSubtotal: z.number().finite().nonnegative().optional(),
+    expected_total: z.number().finite().nonnegative().optional(),
+    expectedTotal: z.number().finite().nonnegative().optional(),
     acceptPriceChange: z.boolean().optional(),
   })
   .strict();
