@@ -30,6 +30,7 @@ export interface ComboOptionGroupView {
 export interface ComboIncludedProductView {
   id: string;
   productId: string;
+  quantity: number;
   sortOrder: number;
   product: ComboOptionProductView['product'];
 }
@@ -93,6 +94,12 @@ export interface ComboOptionRepository {
     comboProductId: string,
     productId: string,
   ): Promise<ComboIncludedProductView>;
+  updateIncludedProductQuantity(
+    ownerUserId: string,
+    comboProductId: string,
+    includedProductId: string,
+    quantity: number,
+  ): Promise<ComboIncludedProductView | null>;
   removeIncludedProduct(
     ownerUserId: string,
     comboProductId: string,

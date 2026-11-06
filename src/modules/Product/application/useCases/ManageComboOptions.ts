@@ -34,6 +34,20 @@ export class ManageComboOptions {
     return this.repository.addIncludedProduct(ownerUserId, comboProductId, productId);
   }
 
+  updateIncludedProductQuantity(
+    ownerUserId: string,
+    comboProductId: string,
+    includedProductId: string,
+    quantity: number,
+  ) {
+    return this.repository.updateIncludedProductQuantity(
+      ownerUserId,
+      comboProductId,
+      includedProductId,
+      quantity,
+    );
+  }
+
   removeIncludedProduct(ownerUserId: string, comboProductId: string, productId: string) {
     return this.repository.removeIncludedProduct(ownerUserId, comboProductId, productId);
   }

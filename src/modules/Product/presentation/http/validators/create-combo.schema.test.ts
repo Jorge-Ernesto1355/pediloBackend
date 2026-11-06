@@ -9,6 +9,9 @@ describe('createComboSchema', () => {
   it('defaults groups to one selection', () => expect(createComboSchema.parse({ ...valid, optionGroups: [{ name: 'g', productIds: ['a', 'b'] }] }).optionGroups[0]).toMatchObject({ minSelections: 1, maxSelections: 1 }));
   it('accepts exact upper boundaries', () => expect(createComboSchema.safeParse({ ...valid, name: 'x'.repeat(80), description: 'd'.repeat(100), price: 10_000_000, optionGroups: [{ name: 'g'.repeat(30), productIds: ['a', 'b'] }] }).success).toBe(true));
   it('accepts ten included products', () => expect(createComboSchema.safeParse({ ...base, includedProductIds: Array.from({ length: 10 }, (_, i) => `p-${i}`) }).success).toBe(true));
+  it('accepts repeated included products through quantities', () => expect(createComboSchema.safeParse({ ...base, includedProducts: [{ productId: 'coke', quantity: 2 }, { productId: 'sushi', quantity: 1 }] }).success).toBe(true));
+  it('rejects an included product quantity above ten', () => expect(createComboSchema.safeParse({ ...base, includedProducts: [{ productId: 'coke', quantity: 11 }] }).success).toBe(false));
+  it('allows ten units for each included product', () => expect(createComboSchema.safeParse({ ...base, includedProducts: [{ productId: 'coke', quantity: 10 }, { productId: 'sushi', quantity: 10 }] }).success).toBe(true));
   it('rejects more than ten included products', () => expect(createComboSchema.safeParse({ ...base, includedProductIds: Array.from({ length: 11 }, (_, i) => `p-${i}`) }).success).toBe(false));
   it('accepts five groups', () => expect(createComboSchema.safeParse({ ...valid, optionGroups: Array.from({ length: 5 }, (_, i) => ({ name: `g-${i}`, productIds: [`a-${i}`, `b-${i}`] })) }).success).toBe(true));
   it('rejects more than five groups', () => expect(createComboSchema.safeParse({ ...valid, optionGroups: Array.from({ length: 6 }, (_, i) => ({ name: `g-${i}`, productIds: [`a-${i}`, `b-${i}`] })) }).success).toBe(false));

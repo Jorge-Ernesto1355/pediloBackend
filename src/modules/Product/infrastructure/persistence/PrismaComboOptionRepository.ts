@@ -65,6 +65,7 @@ const comboSelect = {
     select: {
       id: true,
       productId: true,
+      quantity: true,
       sortOrder: true,
       product: { select: choiceProductSelect },
     },
@@ -288,6 +289,7 @@ export class PrismaComboOptionRepository implements ComboOptionRepository {
       select: {
         id: true,
         productId: true,
+        quantity: true,
         sortOrder: true,
         product: { select: choiceProductSelect },
       },
@@ -308,6 +310,32 @@ export class PrismaComboOptionRepository implements ComboOptionRepository {
     if (!included) return false;
     await this.prisma.comboIncludedProduct.delete({ where: { id: included.id } });
     return true;
+  }
+
+  async updateIncludedProductQuantity(
+    ownerUserId: string,
+    comboProductId: string,
+    includedProductId: string,
+    quantity: number,
+  ): Promise<ComboIncludedProductView | null> {
+    await this.findCombo(ownerUserId, comboProductId);
+    const included = await this.prisma.comboIncludedProduct.findFirst({
+      where: { id: includedProductId, comboProductId },
+      select: { id: true },
+    });
+    if (!included) return null;
+    const row = await this.prisma.comboIncludedProduct.update({
+      where: { id: included.id },
+      data: { quantity },
+      select: {
+        id: true,
+        productId: true,
+        quantity: true,
+        sortOrder: true,
+        product: { select: choiceProductSelect },
+      },
+    });
+    return toIncludedProduct(row);
   }
 
   private async findCombo(ownerUserId: string, productId: string) {
@@ -387,6 +415,7 @@ function toIncludedProduct(
     select: {
       id: true;
       productId: true;
+      quantity: true;
       sortOrder: true;
       product: { select: typeof choiceProductSelect };
     };
@@ -395,6 +424,7 @@ function toIncludedProduct(
   return {
     id: row.id,
     productId: row.productId,
+    quantity: row.quantity,
     sortOrder: row.sortOrder,
     product: { ...row.product, price: row.product.price.toNumber() },
   };

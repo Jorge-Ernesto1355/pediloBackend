@@ -404,6 +404,7 @@ model ComboIncludedProduct {
   businessId     String
   comboProductId String
   productId      String
+  quantity       Int      @default(1)
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
 

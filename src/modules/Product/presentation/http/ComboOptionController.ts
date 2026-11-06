@@ -8,6 +8,7 @@ import {
   createComboOptionGroupSchema,
   updateComboOptionGroupSchema,
   addComboChoiceProductSchema,
+  updateComboIncludedProductSchema,
 } from './validators/combo-option.schemas.js';
 import { ComboOptionError } from '../../domain/errors/ComboOptionErrors.js';
 
@@ -129,6 +130,26 @@ export class ComboOptionController {
       .then((removed) =>
         removed
           ? response.status(204).send()
+          : response.status(404).json({ error: { code: 'COMBO_INCLUDED_PRODUCT_NOT_FOUND' } }),
+      )
+      .catch((error) => this.handleError(response, error));
+  };
+
+  updateIncludedProductQuantity = (request: Request, response: Response) => {
+    const params = comboIncludedProductParamsSchema.safeParse(request.params);
+    const body = updateComboIncludedProductSchema.safeParse(request.body);
+    if (!params.success) return badRequest(response, params.error);
+    if (!body.success) return badRequest(response, body.error);
+    return this.manageComboOptions
+      .updateIncludedProductQuantity(
+        request.user!.id,
+        params.data.productId,
+        params.data.includedProductId,
+        body.data.quantity,
+      )
+      .then((includedProduct) =>
+        includedProduct
+          ? response.json({ includedProduct })
           : response.status(404).json({ error: { code: 'COMBO_INCLUDED_PRODUCT_NOT_FOUND' } }),
       )
       .catch((error) => this.handleError(response, error));

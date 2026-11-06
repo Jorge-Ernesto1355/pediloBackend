@@ -21,6 +21,11 @@ comboOptionRouter.delete(
   requireAuth,
   controller.removeIncludedProduct,
 );
+comboOptionRouter.patch(
+  '/products/:productId/combo-included-products/:includedProductId',
+  requireAuth,
+  controller.updateIncludedProductQuantity,
+);
 comboOptionRouter.get('/products/:productId/combo-option-groups', requireAuth, controller.getCombo);
 comboOptionRouter.post(
   '/products/:productId/combo-option-groups',

@@ -144,6 +144,7 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
                     product.comboIncludes.map(async (included) => ({
                       id: included.id,
                       productId: included.productId,
+                      quantity: included.quantity,
                       sortOrder: included.sortOrder,
                       product: {
                         id: included.product.id,

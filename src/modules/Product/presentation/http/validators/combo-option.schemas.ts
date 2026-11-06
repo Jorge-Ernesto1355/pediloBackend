@@ -76,3 +76,7 @@ export const updateComboOptionGroupSchema = z
   );
 
 export const addComboChoiceProductSchema = z.object({ productId: idSchema }).strict();
+
+export const updateComboIncludedProductSchema = z
+  .object({ quantity: z.number().int().min(1).max(10) })
+  .strict();

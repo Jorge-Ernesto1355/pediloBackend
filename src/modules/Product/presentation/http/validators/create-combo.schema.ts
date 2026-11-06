@@ -44,20 +44,24 @@ export const createComboSchema = z
       }),
     imageUrl: z.string().trim().url().nullable().optional(),
     isAvailable: z.boolean().optional(),
-    includedProductIds: z
-      .array(id)
+    includedProductIds: z.array(id).min(1).max(10).optional(),
+    includedProducts: z
+      .array(z.object({ productId: id, quantity: z.number().int().min(1).max(10) }).strict())
       .min(1, 'Selecciona al menos un producto incluido.')
-      .max(10, 'A combo can include at most 10 included products'),
+      .max(10, 'A combo can include at most 10 product units')
+      .optional(),
     optionGroups: z.array(group).max(5, 'A combo can have at most 5 option groups').default([]),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const all = [...value.includedProductIds, ...value.optionGroups.flatMap((g) => g.productIds)];
-    if (new Set(value.includedProductIds).size !== value.includedProductIds.length) {
+    const included = value.includedProducts?.map((item) => item.productId) ?? value.includedProductIds ?? [];
+    const all = [...included, ...value.optionGroups.flatMap((g) => g.productIds)];
+    if (!included.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['includedProducts'], message: 'Selecciona al menos un producto incluido.' });
+    }
+    if (value.includedProducts && new Set(included).size !== included.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['includedProductIds'],
-        message: 'No repitas productos incluidos.',
+        code: z.ZodIssueCode.custom, path: ['includedProducts'], message: 'Cada producto incluido debe aparecer una sola vez con su cantidad.',
       });
     }
     if (new Set(all).size !== all.length) {

@@ -11,7 +11,8 @@ export const createComboRouter = Router();
 createComboRouter.post('/products/combos', requireAuth, async (request, response, next) => {
   const input = createComboSchema.safeParse(request.body);
   if (!input.success) return response.status(400).json({ error: input.error.flatten() });
-  const { categoryId, includedProductIds, optionGroups, ...fields } = input.data;
+  const { categoryId, includedProductIds, includedProducts, optionGroups, ...fields } = input.data;
+  const normalizedIncludedProducts = includedProducts ?? includedProductIds!.map((productId) => ({ productId, quantity: 1 }));
   const userId = request.user!.id;
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -27,7 +28,7 @@ createComboRouter.post('/products/combos', requireAuth, async (request, response
       if (!category) return { error: 'CATEGORY_NOT_FOUND' as const };
 
       const relatedIds = [
-        ...new Set([...includedProductIds, ...optionGroups.flatMap((g) => g.productIds)]),
+        ...new Set([...normalizedIncludedProducts.map((item) => item.productId), ...optionGroups.flatMap((g) => g.productIds)]),
       ];
       const products = await tx.product.findMany({
         where: { id: { in: relatedIds }, businessId: user.businessId, type: ProductType.PRODUCT },
@@ -48,9 +49,10 @@ createComboRouter.post('/products/combos', requireAuth, async (request, response
           categoryId,
           sortOrder: (aggregate._max.sortOrder ?? -1) + 1,
           comboIncludes: {
-            create: includedProductIds.map((productId, sortOrder) => ({
+            create: normalizedIncludedProducts.map(({ productId, quantity }, sortOrder) => ({
               businessId: user.businessId!,
               productId,
+              quantity,
               sortOrder,
             })),
           },
