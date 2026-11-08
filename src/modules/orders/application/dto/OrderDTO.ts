@@ -19,4 +19,5 @@ export interface ListOrdersDTO {
   period?: 'today' | '7d' | '30d' | 'lastMonth';
   page: number;
   limit: number;
+  summary?: boolean;
 }

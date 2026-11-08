@@ -78,7 +78,17 @@ export class OrderController {
       .execute(req.user!.id, { businessId: params.data.businessId, ...query.data })
       .then(({ orders, total }) =>
         res.json({
-          orders: orders.map((order) => order.toJSON()),
+          orders: query.data.summary
+            ? orders.map((order) => {
+                const data = order.toJSON();
+                return {
+                  orderNumber: data.orderNumber,
+                  customerName: data.customerName,
+                  total: data.total,
+                  status: data.status,
+                };
+              })
+            : orders.map((order) => order.toJSON()),
           page: query.data.page,
           limit: query.data.limit,
           total,
