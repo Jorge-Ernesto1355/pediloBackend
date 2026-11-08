@@ -1,15 +1,27 @@
 import { Router } from 'express';
 import { ProductType } from '@prisma/client';
+import multer from 'multer';
 import { prisma } from '@/libs/prisma.js';
 import { authProvider } from '@/modules/auth/presentation/http/auth.dependencies.js';
 import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
+import { isSupportedImageFile } from '@/shared/validation/image-file.js';
+import { CloudinaryProductImageStorage } from '../../infrastructure/storage/CloudinaryProductImageStorage.js';
 import { createComboSchema } from './validators/create-combo.schema.js';
 
 const requireAuth = createRequireAuth(authProvider);
+const imageStorage = new CloudinaryProductImageStorage();
+const uploadProductImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_request, file, callback) => callback(null, file.mimetype.startsWith('image/')),
+});
 export const createComboRouter = Router();
 
-createComboRouter.post('/products/combos', requireAuth, async (request, response, next) => {
-  const input = createComboSchema.safeParse(request.body);
+createComboRouter.post('/products/combos', requireAuth, uploadProductImage.single('image'), async (request, response, next) => {
+  if (request.file && !isSupportedImageFile(request.file)) {
+    return response.status(400).json({ error: 'Unsupported or invalid image file' });
+  }
+  const input = createComboSchema.safeParse(parseMultipartBody(request.body));
   if (!input.success) return response.status(400).json({ error: input.error.flatten() });
   const { categoryId, includedProductIds, includedProducts, optionGroups, ...fields } = input.data;
   const normalizedIncludedProducts = includedProducts ?? includedProductIds!.map((productId) => ({ productId, quantity: 1 }));
@@ -100,8 +112,43 @@ createComboRouter.post('/products/combos', requireAuth, async (request, response
             : 400;
       return response.status(status).json({ error: result.error });
     }
-    return response.status(201).json(result);
+    if (!request.file) return response.status(201).json(result);
+
+    let uploadedPublicId: string | undefined;
+    try {
+      const image = await imageStorage.upload(
+        { buffer: request.file.buffer, mimetype: request.file.mimetype },
+        `products/${result.combo.id}`,
+      );
+      uploadedPublicId = image.publicId;
+      await prisma.product.update({
+        where: { id: result.combo.id },
+        data: { imageUrl: image.url, imageBlurUrl: image.blurUrl, imagePublicId: image.publicId },
+      });
+      return response.status(201).json({
+        combo: { ...result.combo, imageUrl: image.url, imageBlurUrl: image.blurUrl },
+      });
+    } catch (error) {
+      if (uploadedPublicId) await imageStorage.delete(uploadedPublicId).catch(() => undefined);
+      await prisma.product.delete({ where: { id: result.combo.id } }).catch(() => undefined);
+      return next(error);
+    }
   } catch (error) {
     return next(error);
   }
 });
+
+function parseMultipartBody(body: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...body };
+  if (typeof normalized.price === 'string') normalized.price = Number(normalized.price);
+  for (const field of ['includedProducts', 'includedProductIds', 'optionGroups']) {
+    if (typeof normalized[field] === 'string') {
+      try {
+        normalized[field] = JSON.parse(normalized[field]);
+      } catch {
+        // Let Zod return the normal validation error for malformed JSON fields.
+      }
+    }
+  }
+  return normalized;
+}

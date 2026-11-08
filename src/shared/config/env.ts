@@ -126,9 +126,13 @@ const configuredTrustedOrigins = (env.TRUSTED_ORIGINS ?? '')
   .map((origin) => origin.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-export const trustedOrigins =
-  configuredTrustedOrigins.length > 0
-    ? configuredTrustedOrigins
-    : env.NODE_ENV === 'production'
-      ? [frontendUrl]
-      : [frontendUrl, 'http://localhost:3001'];
+const defaultTrustedOrigins =
+  env.NODE_ENV === 'production' ? [frontendUrl] : [frontendUrl, 'http://localhost:3001'];
+
+// Always keep the canonical frontend origin for the selected Pedilo
+// environment. A custom TRUSTED_ORIGINS value may add local preview or
+// temporary domains, but must not accidentally remove dev.pedilo.mx or
+// pedilo.mx and break CORS/SSE after deployment.
+export const trustedOrigins = Array.from(
+  new Set([...defaultTrustedOrigins, ...configuredTrustedOrigins]),
+);
