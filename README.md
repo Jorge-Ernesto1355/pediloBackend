@@ -36,6 +36,18 @@ y su propia `DATABASE_URL`. Producción usa `PEDILO_ENV=production`,
 `FRONTEND_URL=https://pedilo.mx`, `BETTER_AUTH_BASE_URL=https://api.pedilo.mx`
 y su propia `DATABASE_URL`.
 
+### Caché Redis del menú público
+
+El backend usa el cliente oficial `redis` sobre TCP+TLS para cachear únicamente
+`GET /api/v1/public/businesses/:slug/catalog`. Redis es opcional: si no se
+configura o deja de responder, el catálogo continúa consultando PostgreSQL.
+
+En Render agrega únicamente la variable `REDIS_URL` en el servicio backend,
+usando la URL TLS privada de Upstash (`rediss://...`). No la expongas en el
+frontend ni la escribas en logs. El TTL inicial del catálogo es de 5 minutos;
+las mutaciones exitosas de negocio, menú, categorías, productos, opciones,
+descuentos, configuración pública e información de pago invalidan la caché.
+
 ## Scripts
 
 - `npm run dev`: servidor en modo watch.

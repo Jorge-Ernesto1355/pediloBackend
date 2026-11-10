@@ -11,6 +11,7 @@ import { UpdateBusiness } from '../../application/useCases/UpdateBusiness.js';
 import { PrismaBusinessRepository } from '../../infrastructure/persistence/PrismaBusinessRepository.js';
 import { BusinessController } from './BusinessController.js';
 import { CloudinaryImageStorage } from '../../infrastructure/storage/CloudinaryImageStorage.js';
+import { invalidatePublicMenuAfterSuccess } from './public-menu-invalidation.middleware.js';
 
 const repository = new PrismaBusinessRepository(prisma);
 const imageStorage = new CloudinaryImageStorage();
@@ -31,6 +32,7 @@ const controller = new BusinessController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const businessRouter = Router();
+businessRouter.use(invalidatePublicMenuAfterSuccess);
 // These legacy public endpoints remain available for frontend compatibility, but
 // intentionally return empty payloads and never invoke a repository or use case.
 // The supported public business read endpoint is the catalog route.

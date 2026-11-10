@@ -11,10 +11,11 @@ import { GetPublicBusinessCatalog } from '../../application/useCases/GetPublicBu
 import { PrismaPublicBusinessRepository } from '../../infrastructure/persistence/PrismaPublicBusinessRepository.js';
 import { PublicBusinessController } from './PublicBusinessController.js';
 import { StoreVisitStatsController } from './StoreVisitStatsController.js';
+import { CachedPublicBusinessRepository } from '../../infrastructure/cache/PublicMenuCache.js';
 
 const storeVisitRepository = new PrismaStoreVisitRepository(prisma);
 const controller = new PublicBusinessController(
-  new GetPublicBusinessCatalog(new PrismaPublicBusinessRepository(prisma)),
+  new GetPublicBusinessCatalog(new CachedPublicBusinessRepository(new PrismaPublicBusinessRepository(prisma))),
   new RecordPublicStoreVisit(
     storeVisitRepository,
     new HmacAnonymousStoreVisitorHasher(env.BETTER_AUTH_SECRET),

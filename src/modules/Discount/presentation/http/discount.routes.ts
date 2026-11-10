@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { DiscountStatus } from '@prisma/client';
 import { prisma } from '@/libs/prisma.js';
+import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
 import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
 import { authProvider } from '@/modules/auth/presentation/http/auth.dependencies.js';
 import { AppError } from '@/shared/errors/app-error.js';
@@ -9,6 +10,7 @@ import { priceWithDiscount } from '@/modules/Discount/domain/pricing.js';
 
 const requireAuth = createRequireAuth(authProvider);
 const router = Router();
+router.use(invalidatePublicMenuAfterSuccess);
 const recentRequests = new Map<string, { at: number; value: unknown }>();
 
 const inputSchema = z.object({

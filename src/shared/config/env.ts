@@ -31,6 +31,7 @@ const envSchema = z
     REQUEST_LOGGING: z.enum(['true', 'false']).default('true'),
     SENTRY_DSN: z.string().url().optional(),
     SENTRY_RELEASE: z.string().min(1).optional(),
+    REDIS_URL: z.string().url().optional(),
   })
   .superRefine((values, context) => {
     if (values.NODE_ENV === 'production' && values.BETTER_AUTH_SECRET.length < 32) {
@@ -98,6 +99,13 @@ const envSchema = z
         path: ['EMAIL_FROM'],
         message:
           'EMAIL_FROM cannot use example.com; use onboarding@resend.dev or a verified domain',
+      });
+    }
+    if (values.REDIS_URL && new URL(values.REDIS_URL).protocol !== 'rediss:') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message: 'REDIS_URL must use the rediss:// TLS URL provided by Upstash',
       });
     }
   });

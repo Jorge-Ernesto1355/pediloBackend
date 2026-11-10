@@ -5,12 +5,14 @@ import { createRequireAuth } from '@/shared/config/authentication/auth.middlewar
 import { ManageComboOptions } from '../../application/useCases/ManageComboOptions.js';
 import { PrismaComboOptionRepository } from '../../infrastructure/persistence/PrismaComboOptionRepository.js';
 import { ComboOptionController } from './ComboOptionController.js';
+import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
 
 const repository = new PrismaComboOptionRepository(prisma);
 const controller = new ComboOptionController(new ManageComboOptions(repository));
 const requireAuth = createRequireAuth(authProvider);
 
 export const comboOptionRouter = Router();
+comboOptionRouter.use(invalidatePublicMenuAfterSuccess);
 comboOptionRouter.post(
   '/products/:productId/combo-included-products',
   requireAuth,

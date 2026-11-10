@@ -18,6 +18,7 @@ import { UpdateOptionGroup } from '../../application/useCases/UpdateOptionGroup.
 import { UpdateOption } from '../../application/useCases/UpdateOption.js';
 import { PrismaProductOptionRepository } from '../../infrastructure/persistence/PrismaProductOptionRepository.js';
 import { ProductOptionController } from './ProductOptionController.js';
+import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
 
 const repository = new PrismaProductOptionRepository(prisma);
 const controller = new ProductOptionController(
@@ -39,6 +40,7 @@ const controller = new ProductOptionController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const productOptionRouter = Router();
+productOptionRouter.use(invalidatePublicMenuAfterSuccess);
 productOptionRouter.post('/products/:productId/option-groups', requireAuth, controller.createGroup);
 productOptionRouter.get(
   '/products/:productId/option-groups',

@@ -7,6 +7,7 @@ import { GetBusinessSettings } from '../../application/useCases/GetBusinessSetti
 import { UpdateBusinessSettings } from '../../application/useCases/UpdateBusinessSettings.js';
 import { PrismaBusinessSettingsRepository } from '../../infrastructure/persistence/PrismaBusinessSettingsRepository.js';
 import { BusinessSettingsController } from './BusinessSettingsController.js';
+import { invalidatePublicMenuAfterSuccess } from './public-menu-invalidation.middleware.js';
 
 const repository = new PrismaBusinessSettingsRepository(prisma);
 const controller = new BusinessSettingsController(
@@ -17,6 +18,7 @@ const controller = new BusinessSettingsController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const businessSettingsRouter = Router();
+businessSettingsRouter.use(requireAuth, invalidatePublicMenuAfterSuccess);
 businessSettingsRouter.get('/settings', requireAuth, controller.get);
 businessSettingsRouter.post('/settings', requireAuth, controller.create);
 businessSettingsRouter.patch('/settings', requireAuth, controller.update);

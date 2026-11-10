@@ -21,6 +21,7 @@ import { GetProductAnalyticsSummary } from '../../application/useCases/GetProduc
 import { PrismaProductRepository } from '../../infrastructure/persistence/PrismaProductRepository.js';
 import { CloudinaryProductImageStorage } from '../../infrastructure/storage/CloudinaryProductImageStorage.js';
 import { ProductController } from './ProductController.js';
+import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
 
 const repository = new PrismaProductRepository(prisma);
 const imageStorage = new CloudinaryProductImageStorage();
@@ -51,6 +52,7 @@ const controller = new ProductController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const productRouter = Router();
+productRouter.use(invalidatePublicMenuAfterSuccess);
 productRouter.post(
   '/:businessId/products',
   requireAuth,

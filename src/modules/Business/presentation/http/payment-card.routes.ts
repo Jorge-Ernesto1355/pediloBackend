@@ -4,6 +4,7 @@ import { prisma } from '@/libs/prisma.js';
 import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
 import { authProvider } from '@/modules/auth/presentation/http/auth.dependencies.js';
 import { detectBank, normalizeClabe, isValidClabe } from '@/shared/validation/clabe.js';
+import { invalidatePublicMenuAfterSuccess } from './public-menu-invalidation.middleware.js';
 
 const requireAuth = createRequireAuth(authProvider);
 const cardSchema = z.object({
@@ -23,6 +24,7 @@ function dto(card: any) {
 }
 
 export const paymentCardRouter = Router();
+paymentCardRouter.use(requireAuth, invalidatePublicMenuAfterSuccess);
 paymentCardRouter.get('/payment-card', requireAuth, async (req, res, next) => {
   try {
     const businessId = await businessIdFor(req.user!.id);

@@ -11,6 +11,7 @@ import { SetCategoryActive } from '../../application/useCases/SetCategoryActive.
 import { UpdateCategory } from '../../application/useCases/UpdateCategory.js';
 import { PrismaCategoryRepository } from '../../infrastructure/persistence/PrismaCategoryRepository.js';
 import { CategoryController } from './CategoryController.js';
+import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
 
 const repository = new PrismaCategoryRepository(prisma);
 const controller = new CategoryController(
@@ -25,6 +26,7 @@ const controller = new CategoryController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const categoryRouter = Router();
+categoryRouter.use(invalidatePublicMenuAfterSuccess);
 categoryRouter.post('/:businessId/categories', requireAuth, controller.create);
 categoryRouter.post('/menus/:menuId/categories/reorder', requireAuth, controller.reorder);
 categoryRouter.post(
