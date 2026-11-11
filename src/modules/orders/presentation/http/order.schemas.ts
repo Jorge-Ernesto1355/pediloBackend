@@ -19,7 +19,6 @@ export const createOrderSchema = z
     fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
     paymentMethod: z.enum(['CASH', 'TRANSFER']).optional(),
     payment_method: z.enum(['cash', 'transfer']).optional(),
-    notes: z.string().trim().max(200).nullable().optional(),
     ignoreCustomerDiscount: z.boolean().optional(),
     expectedSubtotal: z.number().finite().nonnegative().optional(),
     expected_total: z.number().finite().nonnegative().optional(),
@@ -39,6 +38,18 @@ export const createRestaurantOrderSchema = z
 export const orderStatusSchema = z
   .object({
     status: z.enum(['PENDING', 'PREPARING', 'READY', 'CANCELLED']),
+  })
+  .strict();
+const updateItemSchema = itemSchema
+  .extend({ id: z.string().trim().min(1).optional() })
+  .omit({ expectedUnitPrice: true, expected_unit_price: true });
+export const updateOrderSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    customerId: z.string().trim().min(1).nullable().optional(),
+    fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
+    paymentMethod: z.enum(['CASH', 'TRANSFER']).optional(),
+    items: z.array(updateItemSchema).min(1).max(100),
   })
   .strict();
 export const orderListSchema = z

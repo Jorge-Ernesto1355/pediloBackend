@@ -18,7 +18,9 @@ const controller = new BusinessSettingsController(
 const requireAuth = createRequireAuth(authProvider);
 
 export const businessSettingsRouter = Router();
-businessSettingsRouter.use(requireAuth, invalidatePublicMenuAfterSuccess);
+// Keep cache invalidation scoped to this router, but do not authenticate every
+// request under /businesses: public checkout routes are mounted at the same prefix.
+businessSettingsRouter.use(invalidatePublicMenuAfterSuccess);
 businessSettingsRouter.get('/settings', requireAuth, controller.get);
 businessSettingsRouter.post('/settings', requireAuth, controller.create);
 businessSettingsRouter.patch('/settings', requireAuth, controller.update);

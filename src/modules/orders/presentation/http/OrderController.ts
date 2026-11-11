@@ -5,6 +5,7 @@ import { CreateRestaurantOrder } from '../../application/useCases/CreateRestaura
 import { GetOrder } from '../../application/useCases/GetOrder.js';
 import { ListOrders } from '../../application/useCases/ListOrders.js';
 import { UpdateOrderStatus } from '../../application/useCases/UpdateOrderStatus.js';
+import { UpdateOrder } from '../../application/useCases/UpdateOrder.js';
 import type { OrderStatusTimings } from '../../application/ports/OrderRepository.js';
 import {
   businessIdSchema,
@@ -13,6 +14,7 @@ import {
   orderIdSchema,
   orderListSchema,
   orderStatusSchema,
+  updateOrderSchema,
 } from './order.schemas.js';
 
 export class OrderController {
@@ -22,6 +24,7 @@ export class OrderController {
     private readonly getOrder: GetOrder,
     private readonly listOrders: ListOrders,
     private readonly updateOrderStatus: UpdateOrderStatus,
+    private readonly updateOrder: UpdateOrder,
   ) {}
   create = (req: Request, res: Response) => {
     const params = businessIdSchema.safeParse(req.params);
@@ -33,7 +36,11 @@ export class OrderController {
         ...body.data,
         paymentMethod:
           body.data.paymentMethod ??
-          (body.data.payment_method === 'transfer' ? 'TRANSFER' : body.data.payment_method === 'cash' ? 'CASH' : undefined),
+          (body.data.payment_method === 'transfer'
+            ? 'TRANSFER'
+            : body.data.payment_method === 'cash'
+              ? 'CASH'
+              : undefined),
       })
       .then((order) => res.status(201).json({ order: order.toJSON() }))
       .catch((error) => handle(res, error));
@@ -43,21 +50,26 @@ export class OrderController {
     const body = createRestaurantOrderSchema.safeParse(req.body);
     if (!params.success) return bad(res, params.error);
     if (!body.success) return bad(res, body.error);
-    const rawIdempotencyKey = req.get('Idempotency-Key')
+    const rawIdempotencyKey = req.get('Idempotency-Key');
     const idempotencyKey =
       rawIdempotencyKey && /^[A-Za-z0-9_-]{16,128}$/.test(rawIdempotencyKey)
         ? rawIdempotencyKey
         : undefined;
     return this.createRestaurantOrder
-      .execute(req.user!.id, params.data.businessId, {
-        customer: {
-          name: body.data.customerName ?? null,
-          phone: body.data.customerPhone ?? null,
+      .execute(
+        req.user!.id,
+        params.data.businessId,
+        {
+          customer: {
+            name: body.data.customerName ?? null,
+            phone: body.data.customerPhone ?? null,
+          },
+          items: body.data.items,
+          fulfillmentType: body.data.fulfillmentType,
+          notes: body.data.notes,
         },
-        items: body.data.items,
-        fulfillmentType: body.data.fulfillmentType,
-        notes: body.data.notes,
-      }, idempotencyKey)
+        idempotencyKey,
+      )
       .then((order) => res.status(201).json({ order: order.toJSON() }))
       .catch((error) => handle(res, error));
   };
@@ -129,6 +141,16 @@ export class OrderController {
         return handle(res, error);
       });
   };
+  update = (req: Request, res: Response) => {
+    const params = orderIdSchema.safeParse(req.params);
+    const body = updateOrderSchema.safeParse(req.body);
+    if (!params.success) return bad(res, params.error);
+    if (!body.success) return bad(res, body.error);
+    return this.updateOrder
+      .execute(req.user!.id, params.data.orderId, body.data)
+      .then((order) => res.json({ order: order.toJSON() }))
+      .catch((error) => handle(res, error));
+  };
 }
 function bad(res: Response, error: { flatten(): unknown }) {
   return res.status(400).json({
@@ -151,6 +173,7 @@ function handle(res: Response, error: unknown) {
         ? error.message
         : 'Unexpected error'
       : 'Unexpected error';
-  const details = error && typeof error === 'object' && 'details' in error ? error.details : undefined;
+  const details =
+    error && typeof error === 'object' && 'details' in error ? error.details : undefined;
   return res.status(status).json({ error: { code, message, ...(details ? { details } : {}) } });
 }

@@ -3,6 +3,7 @@ import {
   createOrderSchema,
   createRestaurantOrderSchema,
   orderListSchema,
+  updateOrderSchema,
 } from './order.schemas.js';
 
 describe('order list period validation', () => {
@@ -53,5 +54,17 @@ describe('order creation schemas', () => {
         items: [{ productId: 'p1', quantity: 1 }],
       }).customerPhone,
     ).toBeNull();
+  });
+});
+
+describe('order update schema', () => {
+  it('accepts ids for existing order items', () => {
+    expect(
+      updateOrderSchema.parse({
+        expectedVersion: 1,
+        customerId: 'customer-1',
+        items: [{ id: 'item-1', productId: 'product-1', quantity: 1 }],
+      }).items[0],
+    ).toMatchObject({ id: 'item-1', productId: 'product-1' });
   });
 });

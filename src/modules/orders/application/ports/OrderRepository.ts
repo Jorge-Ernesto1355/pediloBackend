@@ -1,5 +1,5 @@
 import { Order, OrderStatus } from '../../domain/entities/Order.js';
-import { CreateOrderDTO, ListOrdersDTO } from '../dto/OrderDTO.js';
+import { CreateOrderDTO, ListOrdersDTO, UpdateOrderDTO } from '../dto/OrderDTO.js';
 
 export type OrderStatusUpdate = {
   id: string;
@@ -38,4 +38,5 @@ export interface OrderRepository {
     status: OrderStatus,
     timings?: OrderStatusTimings,
   ): Promise<OrderStatusUpdate | null>;
+  update(ownerUserId: string, orderId: string, input: UpdateOrderDTO): Promise<Order>;
 }

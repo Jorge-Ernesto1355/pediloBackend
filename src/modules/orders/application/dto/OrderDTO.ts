@@ -1,8 +1,19 @@
-import { OrderFulfillmentType, OrderPaymentMethod, OrderStatus } from '../../domain/entities/Order.js';
+import {
+  OrderFulfillmentType,
+  OrderPaymentMethod,
+  OrderStatus,
+} from '../../domain/entities/Order.js';
 
 export interface CreateOrderDTO {
   customer: { name: string | null; phone: string | null };
-  items: { productId: string; quantity: number; optionIds?: string[]; comboChoiceIds?: string[]; expectedUnitPrice?: number; expected_unit_price?: number }[];
+  items: {
+    productId: string;
+    quantity: number;
+    optionIds?: string[];
+    comboChoiceIds?: string[];
+    expectedUnitPrice?: number;
+    expected_unit_price?: number;
+  }[];
   fulfillmentType?: OrderFulfillmentType;
   notes?: string | null;
   ignoreCustomerDiscount?: boolean;
@@ -20,4 +31,18 @@ export interface ListOrdersDTO {
   page: number;
   limit: number;
   summary?: boolean;
+}
+
+export interface UpdateOrderDTO {
+  expectedVersion: number;
+  customerId?: string | null;
+  fulfillmentType?: OrderFulfillmentType;
+  paymentMethod?: OrderPaymentMethod;
+  items: {
+    id?: string;
+    productId: string;
+    quantity: number;
+    optionIds?: string[];
+    comboChoiceIds?: string[];
+  }[];
 }

@@ -7,6 +7,7 @@ import { CreateRestaurantOrder } from '../../application/useCases/CreateRestaura
 import { GetOrder } from '../../application/useCases/GetOrder.js';
 import { ListOrders } from '../../application/useCases/ListOrders.js';
 import { UpdateOrderStatus } from '../../application/useCases/UpdateOrderStatus.js';
+import { UpdateOrder } from '../../application/useCases/UpdateOrder.js';
 import { PrismaOrderRepository } from '../../infrastructure/persistence/PrismaOrderRepository.js';
 import { OrderController } from './OrderController.js';
 const repository = new PrismaOrderRepository(prisma);
@@ -16,11 +17,15 @@ const controller = new OrderController(
   new GetOrder(repository),
   new ListOrders(repository),
   new UpdateOrderStatus(repository),
+  new UpdateOrder(repository),
 );
 const requireAuth = createRequireAuth(authProvider);
 export const orderRouter = Router();
+// Public checkout intentionally does not use requireAuth. Restaurant dashboard
+// creation and every read/update route below remain authenticated.
 orderRouter.post('/:businessId/orders', controller.create);
 orderRouter.post('/:businessId/orders/restaurant', requireAuth, controller.createRestaurant);
 orderRouter.get('/:businessId/orders', requireAuth, controller.list);
 orderRouter.get('/orders/:orderId', requireAuth, controller.get);
 orderRouter.patch('/orders/:orderId/status', requireAuth, controller.updateStatus);
+orderRouter.patch('/orders/:orderId', requireAuth, controller.update);

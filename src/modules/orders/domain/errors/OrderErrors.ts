@@ -30,6 +30,24 @@ export class OrderInvalidStatusTransitionError extends AppError {
     super(`Order cannot change from ${from} to ${to}`, 409, 'ORDER_INVALID_STATUS_TRANSITION');
   }
 }
+export class OrderNotEditableError extends AppError {
+  constructor(status: string) {
+    super(`Order cannot be edited while it is ${status}`, 409, 'ORDER_NOT_EDITABLE');
+  }
+}
+export class OrderVersionConflictError extends AppError {
+  readonly details: { expectedVersion: number; currentVersion: number };
+
+  constructor(expectedVersion: number, currentVersion: number) {
+    super('The order was modified by another user', 409, 'ORDER_VERSION_CONFLICT');
+    this.details = { expectedVersion, currentVersion };
+  }
+}
+export class OrderCustomerNotFoundError extends AppError {
+  constructor() {
+    super('Customer is not available for this business', 400, 'ORDER_CUSTOMER_NOT_AVAILABLE');
+  }
+}
 export class OrderPriceChangedError extends AppError {
   readonly details: { expectedSubtotal: number; currentSubtotal: number; difference: number };
 
@@ -45,6 +63,10 @@ export class OrderPriceChangedError extends AppError {
 
 export class OrderTransferUnavailableError extends AppError {
   constructor() {
-    super('Transfer payments are not available for this restaurant', 400, 'PAYMENT_CARD_UNAVAILABLE');
+    super(
+      'Transfer payments are not available for this restaurant',
+      400,
+      'PAYMENT_CARD_UNAVAILABLE',
+    );
   }
 }

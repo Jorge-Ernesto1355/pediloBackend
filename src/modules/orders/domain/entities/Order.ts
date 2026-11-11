@@ -44,6 +44,7 @@ export interface OrderProps {
   subtotal: number;
   discountAmount: number;
   total: number;
+  version: number;
   customerName: string | null;
   customerPhone: string | null;
   notes: string | null;
