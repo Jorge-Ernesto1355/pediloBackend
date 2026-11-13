@@ -57,6 +57,10 @@ descuentos, configuración pública e información de pago invalidan la caché.
 - `npm test`: ejecuta Vitest.
 - `npm run format:check`: comprueba formato con Prettier.
 - `npm run prisma:generate`: genera Prisma Client.
+- `npm run prisma:validate`: valida el schema de Prisma.
+- `npm run prisma:migrate:status`: muestra el estado de las migraciones.
+- `npm run prisma:migrate:deploy`: aplica las migraciones pendientes sin crear nuevas.
+- `npm run prisma:migrate:dev`: crea y aplica una migración durante el desarrollo local.
 
 ## Registro de requests
 
@@ -107,10 +111,11 @@ RESEND_API_KEY=re_xxxxxxxxx
 EMAIL_FROM="Pedilo <onboarding@resend.dev>"
 ```
 
-Aplica la migración y prueba el flujo localmente con:
+Aplica las migraciones y prueba el flujo localmente con:
 
 ```bash
-npx prisma migrate deploy
+npm run prisma:migrate:status
+npm run prisma:migrate:deploy
 npm run prisma:generate
 npm run dev
 curl -X POST http://localhost:3000/api/v1/auth/forgot-password \
