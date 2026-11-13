@@ -10,6 +10,7 @@ import { menuRouter } from './modules/Menu/presentation/http/menu.routes.js';
 import { productRouter } from './modules/Product/presentation/http/product.routes.js';
 import { productOptionRouter } from './modules/Product/presentation/http/product-option.routes.js';
 import { comboOptionRouter } from './modules/Product/presentation/http/combo-option.routes.js';
+import { globalOptionRouter } from './modules/Product/presentation/http/global-option.routes.js';
 import { createComboRouter } from './modules/Product/presentation/http/create-combo.route.js';
 import { publicBusinessRouter } from './modules/Business/presentation/http/public-business.routes.js';
 import { storeVisitRouter } from './modules/Business/presentation/http/store-visit.routes.js';
@@ -72,6 +73,8 @@ export function createApp() {
   app.use('/api/v1/businesses', paymentCardRouter);
   app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
+  // Must precede businessRouter: that router has a generic GET /:id route.
+  app.use('/api/v1/businesses', globalOptionRouter);
   app.use('/api/v1/businesses', businessRouter);
   app.use('/api/v1/businesses', categoryRouter);
   app.use('/api/v1/businesses', menuRouter);

@@ -140,6 +140,17 @@ export class PrismaBusinessRepository implements BusinessRepository {
             },
           };
         }
+        if (input.slug !== undefined && input.slug !== null) {
+          const current = await transaction.business.findUnique({
+            where: { id },
+            select: { slug: true },
+          });
+          if (current && current.slug !== input.slug) {
+            await transaction.businessSlugHistory.create({
+              data: { slug: current.slug, businessId: id },
+            });
+          }
+        }
         await transaction.business.update({ where: { id }, data });
 
         if (input.ubicationMaps === null) {
@@ -256,6 +267,7 @@ export class PrismaBusinessRepository implements BusinessRepository {
       id: row.id,
       name: row.name,
       slug: row.slug,
+      qrCodeToken: row.qrCodeToken,
       description: row.description,
       logoUrl: row.logoUrl ?? undefined,
       logoBlurUrl: row.logoBlurUrl ?? undefined,

@@ -8,7 +8,10 @@ describe('PublicBusinessController catalog visit recording', () => {
   const catalog = { business: { id: 'business-1', slug: 'tacos' }, menus: [] };
 
   function setup(result: unknown) {
-    const getCatalog = { execute: vi.fn().mockResolvedValue(result) };
+    const getCatalog = {
+      execute: vi.fn().mockResolvedValue(result),
+      executeSlugByQrCodeToken: vi.fn(),
+    };
     const recordVisit = { execute: vi.fn().mockResolvedValue(true) };
     const controller = new PublicBusinessController(
       getCatalog as unknown as GetPublicBusinessCatalog,
@@ -51,5 +54,27 @@ describe('PublicBusinessController catalog visit recording', () => {
     expect(response.json).toHaveBeenCalledWith(catalog);
     expect(errorLog).toHaveBeenCalledWith('public_store_visit_record_failed', 'Error');
     errorLog.mockRestore();
+  });
+
+  it('resolves a permanent QR token to the current business slug', async () => {
+    const { controller, getCatalog, response, request } = setup(catalog);
+    getCatalog.executeSlugByQrCodeToken.mockResolvedValue('tacos-nuevo-slug');
+    request.params = { token: 'c12345678901234567890123' };
+
+    await controller.getSlugByQrCodeToken(request, response);
+
+    expect(getCatalog.executeSlugByQrCodeToken).toHaveBeenCalledWith('c12345678901234567890123');
+    expect(response.json).toHaveBeenCalledWith({ slug: 'tacos-nuevo-slug' });
+  });
+
+  it('returns a safe 404 for an invalid or unknown permanent QR token', async () => {
+    const { controller, getCatalog, response, request } = setup(null);
+    getCatalog.executeSlugByQrCodeToken.mockResolvedValue(null);
+    request.params = { token: 'not-a-valid-token' };
+
+    await controller.getSlugByQrCodeToken(request, response);
+
+    expect(getCatalog.executeSlugByQrCodeToken).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(404);
   });
 });

@@ -8,14 +8,14 @@ export const createCategorySchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     menuId: z.string().trim().min(1),
-    description: z.string().trim().max(500).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
   })
   .strict();
 
 export const updateCategorySchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
-    description: z.string().trim().max(500).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required');

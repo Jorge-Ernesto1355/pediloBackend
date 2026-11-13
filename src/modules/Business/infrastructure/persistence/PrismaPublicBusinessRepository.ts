@@ -47,6 +47,19 @@ const catalogInclude = {
                   },
                 },
               },
+              globalOptionGroups: {
+                orderBy: { sortOrder: 'asc' as const },
+                include: {
+                  group: {
+                    include: {
+                      options: {
+                        where: { isAvailable: true },
+                        orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -58,11 +71,32 @@ const catalogInclude = {
 export class PrismaPublicBusinessRepository implements PublicBusinessRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  async getSlugByQrCodeToken(token: string): Promise<string | null> {
+    const business = await this.prisma.business.findUnique({
+      where: { qrCodeToken: token },
+      select: { slug: true },
+    });
+    return business?.slug ?? null;
+  }
+
   async getCatalogBySlug(slug: string): Promise<PublicBusinessCatalog | null> {
-    const row = await this.prisma.business.findUnique({
+    let row = await this.prisma.business.findUnique({
       where: { slug },
       include: catalogInclude,
     });
+
+    if (!row) {
+      const historicalSlug = await this.prisma.businessSlugHistory.findUnique({
+        where: { slug },
+        select: { businessId: true },
+      });
+      if (historicalSlug) {
+        row = await this.prisma.business.findUnique({
+          where: { id: historicalSlug.businessId },
+          include: catalogInclude,
+        });
+      }
+    }
 
     if (!row) return null;
 
@@ -194,7 +228,8 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
                         ),
                       })),
                   ),
-                  optionGroups: product.optionGroups.map((group) => ({
+                  optionGroups: [
+                    ...product.optionGroups.map((group) => ({
                     id: group.id,
                     productId: group.productId,
                     name: group.name,
@@ -217,7 +252,34 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
                       createdAt: option.createdAt,
                       updatedAt: option.updatedAt,
                     })),
-                  })),
+                    })),
+                    ...(product.globalOptionGroups ?? [])
+                      .filter((link) => link.group.isActive && !link.group.archivedAt)
+                      .map((link) => ({
+                        id: link.group.id,
+                        productId: product.id,
+                        name: link.group.name,
+                        isRequired: link.group.isRequired,
+                        minSelections: link.group.minSelections,
+                        maxSelections: link.group.maxSelections,
+                        sortOrder: link.sortOrder,
+                        isActive: link.group.isActive,
+                        createdAt: link.group.createdAt,
+                        updatedAt: link.group.updatedAt,
+                        options: link.group.options.map((option) => ({
+                          id: option.id,
+                          optionGroupId: option.groupId,
+                          name: option.name,
+                          price: option.price.toNumber(),
+                          minSelections: option.minSelections,
+                          maxSelections: option.maxSelections,
+                          sortOrder: option.sortOrder,
+                          isAvailable: option.isAvailable,
+                          createdAt: option.createdAt,
+                          updatedAt: option.updatedAt,
+                        })),
+                      })),
+                  ].sort((a, b) => a.sortOrder - b.sortOrder),
                 })),
               ),
             })),

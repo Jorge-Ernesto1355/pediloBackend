@@ -39,6 +39,7 @@ async function resolveBusinessId(request: Parameters<RequestHandler>[0]): Promis
   if (first === 'categories') return businessFromCategory(resource[1]);
   if (first === 'products') return businessFromProduct(resource[1]);
   if (first === 'option-groups') return businessFromOptionGroup(resource[1]);
+  if (first === 'global-option-groups') return businessForUser(request);
   if (first === 'options') return businessFromOption(resource[1]);
   if (first === 'businesses') return first;
   return businessFromBusiness(first);

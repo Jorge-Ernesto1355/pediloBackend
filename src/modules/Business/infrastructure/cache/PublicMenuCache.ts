@@ -151,4 +151,8 @@ export class CachedPublicBusinessRepository implements PublicBusinessRepository 
   getActiveDiscountsBySlug(slug: string) {
     return this.source.getActiveDiscountsBySlug(slug);
   }
+
+  getSlugByQrCodeToken(token: string) {
+    return this.source.getSlugByQrCodeToken(token);
+  }
 }

@@ -119,6 +119,7 @@ export class PrismaOrderRepository implements OrderRepository {
             include: {
               category: { select: { menuId: true } },
               optionGroups: { include: { options: true } },
+              globalOptionGroups: { include: { group: { include: { options: true } } } },
               comboOptionGroups: { include: { products: { include: { product: true } } } },
               comboIncludes: { include: { product: true } },
             },
@@ -172,7 +173,10 @@ export class PrismaOrderRepository implements OrderRepository {
             const selectedCounts = new Map<string, number>();
             for (const optionId of selectedIds)
               selectedCounts.set(optionId, (selectedCounts.get(optionId) ?? 0) + 1);
-            const activeGroups = product.optionGroups.filter((group) => group.isActive);
+            const activeGroups = [
+              ...product.optionGroups,
+              ...(product.globalOptionGroups ?? []).map((link) => ({ ...link.group, productId: product.id, options: link.group.options.map((option) => ({ ...option, optionGroupId: link.group.id })) })),
+            ].filter((group) => group.isActive && !('archivedAt' in group && group.archivedAt));
             const availableOptions = activeGroups.flatMap((group) =>
               group.options.filter((option) => option.isAvailable),
             );
@@ -556,6 +560,7 @@ export class PrismaOrderRepository implements OrderRepository {
           include: {
             category: { select: { menuId: true } },
             optionGroups: { include: { options: true } },
+              globalOptionGroups: { include: { group: { include: { options: true } } } },
             comboOptionGroups: { include: { products: { include: { product: true } } } },
             comboIncludes: { include: { product: true } },
           },
@@ -639,7 +644,10 @@ export class PrismaOrderRepository implements OrderRepository {
           const selectedCounts = new Map<string, number>();
           for (const optionId of selectedIds)
             selectedCounts.set(optionId, (selectedCounts.get(optionId) ?? 0) + 1);
-          const activeGroups = product.optionGroups.filter((group) => group.isActive);
+          const activeGroups = [
+            ...product.optionGroups,
+            ...(product.globalOptionGroups ?? []).map((link) => ({ ...link.group, productId: product.id, options: link.group.options.map((option) => ({ ...option, optionGroupId: link.group.id })) })),
+          ].filter((group) => group.isActive && !('archivedAt' in group && group.archivedAt));
           const availableOptions = activeGroups.flatMap((group) =>
             group.options.filter((option) => option.isAvailable),
           );

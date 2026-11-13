@@ -14,4 +14,8 @@ export class GetPublicBusinessCatalog {
   executeDiscounts(slug: string): Promise<PublicDiscountPrice[] | null> {
     return this.repository.getActiveDiscountsBySlug(slug);
   }
+
+  executeSlugByQrCodeToken(token: string): Promise<string | null> {
+    return this.repository.getSlugByQrCodeToken(token);
+  }
 }

@@ -2,6 +2,7 @@ export interface BusinessProps {
   id: string;
   name: string;
   slug: string;
+  qrCodeToken: string;
   description?: string | null;
   logoUrl?: string | null;
   logoBlurUrl?: string | null;
@@ -48,6 +49,10 @@ export class Business {
 
   public get slug(): string {
     return this.props.slug;
+  }
+
+  public get qrCodeToken(): string {
+    return this.props.qrCodeToken;
   }
 
   public get description(): string | null | undefined {

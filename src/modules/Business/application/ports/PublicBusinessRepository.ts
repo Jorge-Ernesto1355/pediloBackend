@@ -97,6 +97,7 @@ export interface PublicOption {
 export interface PublicBusinessRepository {
   getCatalogBySlug(slug: string): Promise<PublicBusinessCatalog | null>;
   getActiveDiscountsBySlug(slug: string): Promise<PublicDiscountPrice[] | null>;
+  getSlugByQrCodeToken(token: string): Promise<string | null>;
 }
 
 export interface PublicDiscountPrice {

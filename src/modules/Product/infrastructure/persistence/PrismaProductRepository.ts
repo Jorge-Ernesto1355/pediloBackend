@@ -76,6 +76,40 @@ const productSelect = {
       },
     },
   },
+  globalOptionGroups: {
+    orderBy: { sortOrder: 'asc' as const },
+    select: {
+      sortOrder: true,
+      group: {
+        select: {
+          id: true,
+          name: true,
+          isRequired: true,
+          minSelections: true,
+          maxSelections: true,
+          isActive: true,
+          archivedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          options: {
+            orderBy: { sortOrder: 'asc' as const },
+            select: {
+              id: true,
+              groupId: true,
+              name: true,
+              price: true,
+              minSelections: true,
+              maxSelections: true,
+              isAvailable: true,
+              sortOrder: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+        },
+      },
+    },
+  },
 } as const;
 
 export class PrismaProductRepository implements ProductRepository, ProductManagementRepository {
@@ -526,7 +560,8 @@ async function toDomain(
     isAvailable: row.isAvailable,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    optionGroups: row.optionGroups.map((group): ProductOptionGroupProps => ({
+    optionGroups: [
+      ...row.optionGroups.map((group): ProductOptionGroupProps => ({
       id: group.id,
       productId: group.productId,
       name: group.name,
@@ -549,7 +584,34 @@ async function toDomain(
         createdAt: option.createdAt,
         updatedAt: option.updatedAt,
       })),
-    })),
+      })),
+      ...(row.globalOptionGroups ?? [])
+        .filter((link) => link.group.isActive && !link.group.archivedAt)
+        .map((link): ProductOptionGroupProps => ({
+          id: link.group.id,
+          productId: row.id,
+          name: link.group.name,
+          isRequired: link.group.isRequired,
+          minSelections: link.group.minSelections,
+          maxSelections: link.group.maxSelections,
+          sortOrder: link.sortOrder,
+          isActive: link.group.isActive,
+          createdAt: link.group.createdAt,
+          updatedAt: link.group.updatedAt,
+          options: link.group.options.map((option): ProductOptionProps => ({
+            id: option.id,
+            optionGroupId: option.groupId,
+            name: option.name,
+            price: option.price.toNumber(),
+            minSelections: option.minSelections,
+            maxSelections: option.maxSelections,
+            isAvailable: option.isAvailable,
+            sortOrder: option.sortOrder,
+            createdAt: option.createdAt,
+            updatedAt: option.updatedAt,
+          })),
+        })),
+    ].sort((left, right) => left.sortOrder - right.sortOrder),
   };
   return Product.create(props);
 }

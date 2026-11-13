@@ -5,14 +5,14 @@ export const businessIdSchema = z.object({ businessId: z.string().trim().min(1) 
 
 const categoryInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  description: z.string().trim().max(500).nullable().optional(),
+  description: z.string().trim().max(200).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
 export const createMenuSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
-    description: z.string().trim().max(500).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
     isActive: z.boolean().optional(),
     categories: z.array(categoryInputSchema).max(100).optional(),
   })
@@ -21,7 +21,7 @@ export const createMenuSchema = z
 export const updateMenuSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
-    description: z.string().trim().max(500).nullable().optional(),
+    description: z.string().trim().max(200).nullable().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required');

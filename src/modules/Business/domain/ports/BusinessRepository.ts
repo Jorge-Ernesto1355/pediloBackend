@@ -21,12 +21,12 @@ export interface BusinessRepository {
 
 export interface CreateBusinessRepositoryInput extends Omit<
   BusinessProps,
-  'id' | 'createdAt' | 'updatedAt'
+  'id' | 'createdAt' | 'updatedAt' | 'qrCodeToken'
 > {
   ownerUserId: string;
 }
 
 export type UpdateBusinessRepositoryInput = {
-  [Key in keyof Omit<BusinessProps, 'id' | 'createdAt' | 'updatedAt'>]?:
-    Omit<BusinessProps, 'id' | 'createdAt' | 'updatedAt'>[Key] | null;
+  [Key in keyof Omit<BusinessProps, 'id' | 'createdAt' | 'updatedAt' | 'qrCodeToken'>]?:
+    Omit<BusinessProps, 'id' | 'createdAt' | 'updatedAt' | 'qrCodeToken'>[Key] | null;
 };
