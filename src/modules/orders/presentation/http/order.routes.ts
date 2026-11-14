@@ -20,10 +20,13 @@ const controller = new OrderController(
   new UpdateOrder(repository),
 );
 const requireAuth = createRequireAuth(authProvider);
+export const publicOrderRouter = Router();
+// Public checkout must never depend on a restaurant session. Keep it in a
+// separate router so authenticated middleware cannot accidentally cover it.
+publicOrderRouter.post('/:businessId/orders', controller.create);
+
 export const orderRouter = Router();
-// Public checkout intentionally does not use requireAuth. Restaurant dashboard
-// creation and every read/update route below remain authenticated.
-orderRouter.post('/:businessId/orders', controller.create);
+// Restaurant dashboard creation and every read/update route below are authenticated.
 orderRouter.post('/:businessId/orders/restaurant', requireAuth, controller.createRestaurant);
 orderRouter.get('/:businessId/orders', requireAuth, controller.list);
 orderRouter.get('/orders/:orderId', requireAuth, controller.get);

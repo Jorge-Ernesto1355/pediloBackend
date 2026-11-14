@@ -19,7 +19,7 @@ import { errorHandler } from './shared/errors/error-handler.js';
 import { customerRouter } from './modules/Customer/presentation/http/customer.routes.js';
 import { customerDiscountRouter } from './modules/CustomerDiscount/presentation/http/customer-discount.routes.js';
 import { discountRouter } from './modules/Discount/presentation/http/discount.routes.js';
-import { orderRouter } from './modules/orders/presentation/http/order.routes.js';
+import { orderRouter, publicOrderRouter } from './modules/orders/presentation/http/order.routes.js';
 import { paymentCardRouter } from './modules/Business/presentation/http/payment-card.routes.js';
 import { orderEventsRouter } from './modules/orders/presentation/http/order-events.routes.js';
 import { requestLogger, requestLoggerErrorHandler } from './shared/config/http/request-logger.js';
@@ -73,6 +73,8 @@ export function createApp() {
   app.use('/api/v1/businesses', paymentCardRouter);
   app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
+  // Public menu checkout must be reachable without a restaurant session.
+  app.use('/api/v1/businesses', publicOrderRouter);
   // Must precede businessRouter: that router has a generic GET /:id route.
   app.use('/api/v1/businesses', globalOptionRouter);
   app.use('/api/v1/businesses', businessRouter);
