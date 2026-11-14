@@ -12,6 +12,7 @@ import { UpdateCategory } from '../../application/useCases/UpdateCategory.js';
 import { PrismaCategoryRepository } from '../../infrastructure/persistence/PrismaCategoryRepository.js';
 import { CategoryController } from './CategoryController.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaCategoryRepository(prisma);
 const controller = new CategoryController(
@@ -34,7 +35,7 @@ categoryRouter.post(
   requireAuth,
   controller.moveAllAndDelete,
 );
-categoryRouter.get('/categories/:id', requireAuth, controller.get);
+categoryRouter.get('/categories/:id', requireAuth, cacheCreateMenuResponse, controller.get);
 categoryRouter.patch('/categories/:id', requireAuth, controller.update);
 categoryRouter.patch('/categories/:id/status', requireAuth, controller.setActive);
 categoryRouter.delete('/categories/:id', requireAuth, controller.remove);
