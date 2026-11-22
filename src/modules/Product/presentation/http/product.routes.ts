@@ -22,6 +22,7 @@ import { PrismaProductRepository } from '../../infrastructure/persistence/Prisma
 import { CloudinaryProductImageStorage } from '../../infrastructure/storage/CloudinaryProductImageStorage.js';
 import { ProductController } from './ProductController.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaProductRepository(prisma);
 const imageStorage = new CloudinaryProductImageStorage();
@@ -71,11 +72,11 @@ productRouter.get(
   controller.mostRequested,
 );
 productRouter.get('/:businessId/products/analytics/summary', requireAuth, controller.summary);
-productRouter.get('/mine/products', requireAuth, controller.list);
-productRouter.get('/:businessId/products', requireAuth, controller.list);
-productRouter.get('/categories/:categoryId/products', requireAuth, controller.listByCategory);
+productRouter.get('/mine/products', requireAuth, cacheCreateMenuResponse, controller.list);
+productRouter.get('/:businessId/products', requireAuth, cacheCreateMenuResponse, controller.list);
+productRouter.get('/categories/:categoryId/products', requireAuth, cacheCreateMenuResponse, controller.listByCategory);
 productRouter.post('/categories/:categoryId/products/reorder', requireAuth, controller.reorder);
-productRouter.get('/products/:productId', requireAuth, controller.get);
+productRouter.get('/products/:productId', requireAuth, cacheCreateMenuResponse, controller.get);
 productRouter.patch(
   '/products/:productId',
   requireAuth,

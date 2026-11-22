@@ -6,6 +6,7 @@ import { ManageComboOptions } from '../../application/useCases/ManageComboOption
 import { PrismaComboOptionRepository } from '../../infrastructure/persistence/PrismaComboOptionRepository.js';
 import { ComboOptionController } from './ComboOptionController.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaComboOptionRepository(prisma);
 const controller = new ComboOptionController(new ManageComboOptions(repository));
@@ -28,7 +29,7 @@ comboOptionRouter.patch(
   requireAuth,
   controller.updateIncludedProductQuantity,
 );
-comboOptionRouter.get('/products/:productId/combo-option-groups', requireAuth, controller.getCombo);
+comboOptionRouter.get('/products/:productId/combo-option-groups', requireAuth, cacheCreateMenuResponse, controller.getCombo);
 comboOptionRouter.post(
   '/products/:productId/combo-option-groups',
   requireAuth,

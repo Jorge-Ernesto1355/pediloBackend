@@ -19,6 +19,7 @@ import { UpdateOption } from '../../application/useCases/UpdateOption.js';
 import { PrismaProductOptionRepository } from '../../infrastructure/persistence/PrismaProductOptionRepository.js';
 import { ProductOptionController } from './ProductOptionController.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaProductOptionRepository(prisma);
 const controller = new ProductOptionController(
@@ -45,6 +46,7 @@ productOptionRouter.post('/products/:productId/option-groups', requireAuth, cont
 productOptionRouter.get(
   '/products/:productId/option-groups',
   requireAuth,
+  cacheCreateMenuResponse,
   controller.listGroupsByProduct,
 );
 productOptionRouter.post(
@@ -52,7 +54,7 @@ productOptionRouter.post(
   requireAuth,
   controller.reorderGroupsByProduct,
 );
-productOptionRouter.get('/option-groups/:optionGroupId', requireAuth, controller.getGroupById);
+productOptionRouter.get('/option-groups/:optionGroupId', requireAuth, cacheCreateMenuResponse, controller.getGroupById);
 productOptionRouter.patch(
   '/products/:productId/option-groups/:optionGroupId',
   requireAuth,
@@ -77,6 +79,7 @@ productOptionRouter.post(
 productOptionRouter.get(
   '/option-groups/:optionGroupId/options',
   requireAuth,
+  cacheCreateMenuResponse,
   controller.listOptionsByGroup,
 );
 productOptionRouter.post(
@@ -84,7 +87,7 @@ productOptionRouter.post(
   requireAuth,
   controller.reorderOptionsByGroup,
 );
-productOptionRouter.get('/options/:optionId', requireAuth, controller.getOptionById);
+productOptionRouter.get('/options/:optionId', requireAuth, cacheCreateMenuResponse, controller.getOptionById);
 productOptionRouter.patch('/options/:optionId', requireAuth, controller.updateOptionById);
 productOptionRouter.patch('/options/:optionId/status', requireAuth, controller.setOptionStatus);
 productOptionRouter.delete('/options/:optionId', requireAuth, controller.deleteOptionById);

@@ -5,6 +5,7 @@ import { prisma } from '@/libs/prisma.js';
 import { createRequireAuth } from '@/shared/config/authentication/auth.middleware.js';
 import { authProvider } from '@/modules/auth/presentation/http/auth.dependencies.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const id = z.string().trim().min(1);
 const price = z.number().int().min(0).max(10_000);
@@ -62,14 +63,14 @@ function sendError(response: Response, error: unknown) {
   return response.status(status).json({ error: { code: status === 409 ? 'VERSION_CONFLICT' : 'VALIDATION_ERROR', message: status === 409 ? 'The group was changed by another user' : (error instanceof Error ? error.message : 'Invalid request') } });
 }
 
-globalOptionRouter.get('/global-option-groups', requireAuth, async (req, res) => {
+globalOptionRouter.get('/global-option-groups', cacheCreateMenuResponse, async (req, res) => {
   const businessId = await businessFor(req.user!.id);
   if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED', message: 'Business access denied' } });
   const groups = await prisma.globalOptionGroup.findMany({ where: { businessId, archivedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], include: { _count: { select: { products: true } } } });
   return res.json({ groups: groups.map(serializeSummary) });
 });
 
-globalOptionRouter.get('/global-option-groups/:groupId', requireAuth, async (req, res) => {
+globalOptionRouter.get('/global-option-groups/:groupId', cacheCreateMenuResponse, async (req, res) => {
   const businessId = await businessFor(req.user!.id);
   if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   const group = await prisma.globalOptionGroup.findFirst({
@@ -80,7 +81,7 @@ globalOptionRouter.get('/global-option-groups/:groupId', requireAuth, async (req
   return res.json({ group: serialize(group) });
 });
 
-globalOptionRouter.post('/global-option-groups', requireAuth, async (req, res) => {
+globalOptionRouter.post('/global-option-groups', async (req, res) => {
   const parsed = create.safeParse(req.body); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   try {
@@ -93,7 +94,7 @@ globalOptionRouter.post('/global-option-groups', requireAuth, async (req, res) =
   } catch (error) { return sendError(res, error); }
 });
 
-globalOptionRouter.patch('/global-option-groups/:groupId', requireAuth, async (req, res) => {
+globalOptionRouter.patch('/global-option-groups/:groupId', async (req, res) => {
   const parsed = update.safeParse(req.body); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   try {
@@ -109,7 +110,7 @@ globalOptionRouter.patch('/global-option-groups/:groupId', requireAuth, async (r
   } catch (error) { return sendError(res, error); }
 });
 
-globalOptionRouter.put('/global-option-groups/:groupId/options', requireAuth, async (req, res) => {
+globalOptionRouter.put('/global-option-groups/:groupId/options', async (req, res) => {
   const parsed = optionList.safeParse(req.body); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   try {
@@ -132,7 +133,7 @@ globalOptionRouter.put('/global-option-groups/:groupId/options', requireAuth, as
   } catch (error) { return sendError(res, error); }
 });
 
-globalOptionRouter.put('/global-option-groups/:groupId/products', requireAuth, async (req, res) => {
+globalOptionRouter.put('/global-option-groups/:groupId/products', async (req, res) => {
   const parsed = assignment.safeParse(req.body); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   try {
@@ -150,7 +151,7 @@ globalOptionRouter.put('/global-option-groups/:groupId/products', requireAuth, a
   } catch (error) { return sendError(res, error); }
 });
 
-globalOptionRouter.get('/products/:productId/global-option-groups', requireAuth, async (req, res) => {
+globalOptionRouter.get('/products/:productId/global-option-groups', cacheCreateMenuResponse, async (req, res) => {
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   const product = await prisma.product.findFirst({ where: { id: String(req.params.productId), businessId }, select: { id: true } });
   if (!product) return res.status(404).json({ error: { code: 'PRODUCT_NOT_FOUND' } });
@@ -158,7 +159,7 @@ globalOptionRouter.get('/products/:productId/global-option-groups', requireAuth,
   return res.json({ groups: groups.map(serialize) });
 });
 
-globalOptionRouter.delete('/global-option-groups/:groupId', requireAuth, async (req, res) => {
+globalOptionRouter.delete('/global-option-groups/:groupId', async (req, res) => {
   const businessId = await businessFor(req.user!.id); if (!businessId) return res.status(403).json({ error: { code: 'BUSINESS_ACCESS_DENIED' } });
   const result = await prisma.globalOptionGroup.updateMany({ where: { id: String(req.params.groupId), businessId, archivedAt: null }, data: { archivedAt: new Date(), isActive: false, version: { increment: 1 } } });
   if (!result.count) return res.status(404).json({ error: { code: 'GROUP_NOT_FOUND' } });
