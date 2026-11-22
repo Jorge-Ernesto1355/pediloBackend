@@ -12,8 +12,8 @@ const cardSchema = z
     clabe: z.string().transform(normalizeClabe).refine(isValidClabe, 'CLABE inválida'),
     beneficiaryName: z.string().trim().min(1).max(80).optional(),
     beneficiary_name: z.string().trim().min(1).max(80).optional(),
-  })
-  .strict();
+  });
+// Sin .strict(): campos como bank_code/bank_name se descartan y el banco se calcula en servidor.
 const statusSchema = z
   .object({ isActive: z.boolean().optional(), is_active: z.boolean().optional() })
   .strict()
