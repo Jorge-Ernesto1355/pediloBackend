@@ -24,6 +24,7 @@ import {
   OrderTransferUnavailableError,
   OrderNotFoundError,
   OrderNotEditableError,
+  OrderDeliveryFulfillmentLockedError,
   OrderVersionConflictError,
   OrderCustomerNotFoundError,
 } from '../../domain/errors/OrderErrors.js';
@@ -35,6 +36,27 @@ import { CustomerDiscountApplicationFailedError } from '@/modules/CustomerDiscou
 import { CustomerDisabledError } from '@/modules/Customer/domain/errors/CustomerErrors.js';
 import { resolveComboSelections } from '../../domain/comboSelection.js';
 import { bestDiscountFor, priceWithDiscount } from '@/modules/Discount/domain/pricing.js';
+import { confirmDeliveryQuote } from '@/modules/delivery/domain/deliverySettings.js';
+import { DeliveryDestinationInvalidError } from '@/modules/delivery/domain/errors/DeliveryErrors.js';
+import { loadDeliverySettings } from '@/modules/delivery/infrastructure/persistence/PrismaDeliverySettingsRepository.js';
+import { OFFER_TTL_MS } from '@/modules/delivery/domain/deliveryTokens.js';
+import {
+  calculateRewardDiscount,
+  orderStampBlocker,
+  REWARD_ITEM_OPTION,
+  round2,
+} from '@/modules/loyalty/domain/loyaltyRules.js';
+import { LoyaltyRewardChangedError, LoyaltyRewardUnavailableError } from '@/modules/loyalty/domain/errors/LoyaltyErrors.js';
+import {
+  autoStampOrderInTx,
+  availableRewardProduct,
+  ensureCardInTx,
+  loadProgramRow,
+  lockRewardForRedemption,
+  markRewardRedeemedInTx,
+  onOrderCancelledInTx,
+} from '@/modules/loyalty/infrastructure/persistence/loyaltyLedger.js';
+import type { OrderStatusLoyalty } from '../../application/ports/OrderRepository.js';
 
 const orderInclude = {
   items: {
@@ -44,6 +66,42 @@ const orderInclude = {
     },
   },
   statusHistory: { orderBy: { createdAt: 'asc' as const } },
+  // Estado de la entrega a domicilio para la comanda. Solo el repartidor de ESTA entrega.
+  delivery: {
+    select: {
+      status: true,
+      offerExpiresAt: true,
+      acceptedAt: true,
+      handedOffAt: true,
+      deliveredAt: true,
+      failedAt: true,
+      cancelledAt: true,
+      failureReason: true,
+      foodTotal: true,
+      deliveryFee: true,
+      paymentMethod: true,
+      amountCourierAdvances: true,
+      amountCourierCollects: true,
+      courier: { select: { name: true, phone: true } },
+    },
+  },
+  // Tarjeta de lealtad: premio canjeado (copia) y sello vigente de este pedido.
+  loyaltyReward: {
+    select: {
+      id: true,
+      rewardType: true,
+      rewardValue: true,
+      rewardLabel: true,
+      rewardProductId: true,
+      status: true,
+      redeemedOrderId: true,
+    },
+  },
+  loyaltyStamps: {
+    where: { voidedAt: null },
+    take: 1,
+    select: { id: true, position: true, source: true, createdAt: true },
+  },
 };
 
 export class PrismaOrderRepository implements OrderRepository {
@@ -85,7 +143,7 @@ export class PrismaOrderRepository implements OrderRepository {
     });
     if (!user?.businessId) throw new OrderBusinessNotFoundError();
     if (user.businessId !== businessId) throw new OrderBusinessAccessError();
-    return this.createWithSource(businessId, input, 'RESTAURANT', idempotencyKey);
+    return this.createWithSource(businessId, input, 'RESTAURANT', idempotencyKey, ownerUserId);
   }
 
   private async createWithSource(
@@ -93,6 +151,7 @@ export class PrismaOrderRepository implements OrderRepository {
     input: CreateOrderDTO,
     source: PrismaOrderSource,
     idempotencyKey?: string,
+    actorUserId?: string,
   ): Promise<Order> {
     if (idempotencyKey) {
       const existing = await this.prisma.order.findUnique({
@@ -101,7 +160,7 @@ export class PrismaOrderRepository implements OrderRepository {
       });
       if (existing) return await toDomain(existing);
     }
-    let created: { id: string; createdAt: Date };
+    let created: { id: string; createdAt: Date; loyaltyCardToken: string | null };
     try {
       created = await this.prisma.$transaction(
         async (tx) => {
@@ -292,10 +351,24 @@ export class PrismaOrderRepository implements OrderRepository {
               }
             }
           }
+          // Envío a domicilio: se recalcula SIEMPRE aquí, con la configuración vigente.
+          // Si difiere del que vio el cliente, el pedido no se crea (DELIVERY_FEE_CHANGED).
+          const deliveryQuote =
+            input.fulfillmentType === 'DELIVERY'
+              ? await quoteOrderDelivery(tx, businessId, source, input)
+              : null;
           const last = await tx.order.aggregate({
             where: { businessId },
             _max: { orderNumber: true },
           });
+          // ¿El pedido crea un cliente NUEVO? Solo entonces se entrega la llave de su
+          // tarjeta: nadie obtiene la tarjeta de otra persona escribiendo su teléfono.
+          const customerBefore = input.customer.phone
+            ? await tx.customer.findUnique({
+                where: { businessId_phone: { businessId, phone: input.customer.phone } },
+                select: { id: true },
+              })
+            : null;
           const savedCustomer = input.customer.phone
             ? await tx.customer.upsert({
                 where: {
@@ -306,12 +379,73 @@ export class PrismaOrderRepository implements OrderRepository {
               })
             : null;
           if (source === 'PUBLIC' && savedCustomer?.isDisabled) throw new CustomerDisabledError();
+
+          // Premio de lealtad (uno por pedido). Se valida y bloquea aquí; si ya no aplica o
+          // su descuento cambió, el pedido NO se crea y el cliente confirma el nuevo total.
+          const now = new Date();
+          const loyaltyReward =
+            source === 'PUBLIC' && input.loyalty
+              ? await lockRewardForRedemption(tx, {
+                  businessId,
+                  rewardId: input.loyalty.rewardId,
+                  cardToken: input.loyalty.cardToken,
+                  expectedDiscount: input.loyalty.expectedDiscount,
+                  now,
+                })
+              : source === 'RESTAURANT' && input.loyaltyRewardId && savedCustomer
+                ? await lockRewardForRedemption(tx, {
+                    businessId,
+                    rewardId: input.loyaltyRewardId,
+                    customerId: savedCustomer.id,
+                    now,
+                  })
+                : null;
+          let rewardItem: (typeof items)[number] | null = null;
+          if (loyaltyReward?.rewardType === 'FREE_PRODUCT') {
+            const product = await availableRewardProduct(tx, loyaltyReward);
+            if (!product)
+              throw new LoyaltyRewardUnavailableError(
+                'PRODUCT_UNAVAILABLE',
+                input.loyalty?.expectedDiscount,
+              );
+            // El regalo va a precio completo y se descuenta completo (línea aparte).
+            rewardItem = {
+              productId: product.id,
+              productName: product.name,
+              unitPrice: product.price,
+              unitPriceOriginal: product.price,
+              unitPriceFinal: product.price,
+              discountAmount: 0,
+              discountId: null,
+              discountLabel: null,
+              quantity: 1,
+              subtotal: product.price,
+              options: [REWARD_ITEM_OPTION],
+            };
+          }
+          const orderSubtotal = round2(subtotal + (rewardItem?.subtotal ?? 0));
+          const loyaltyDiscountAmount = loyaltyReward
+            ? calculateRewardDiscount(
+                { type: loyaltyReward.rewardType, value: loyaltyReward.rewardValue },
+                { base: orderSubtotal, freeProductPrice: rewardItem?.unitPriceFinal ?? null },
+              )
+            : 0;
+          if (
+            input.loyalty &&
+            Math.abs(input.loyalty.expectedDiscount - loyaltyDiscountAmount) >= 0.01
+          ) {
+            throw new LoyaltyRewardChangedError(input.loyalty.expectedDiscount, loyaltyDiscountAmount);
+          }
+
           let appliedDiscountId: string | null = null;
           let discountAmount = 0;
           const hasProductDiscount = items.some((item) => item.discountAmount > 0);
+          // Un solo beneficio por cliente: con premio de lealtad no se aplica el descuento
+          // de cliente (este se conserva para el siguiente pedido).
           if (
             source === 'PUBLIC' &&
             savedCustomer &&
+            !loyaltyReward &&
             !input.ignoreCustomerDiscount &&
             !hasProductDiscount
           ) {
@@ -367,15 +501,31 @@ export class PrismaOrderRepository implements OrderRepository {
               source,
               fulfillmentType: input.fulfillmentType ?? 'DINE_IN',
               paymentMethod: (input.paymentMethod ?? 'CASH') as PrismaOrderPaymentMethod,
-              subtotal,
+              subtotal: orderSubtotal,
               discountAmount,
-              total: Math.max(0, subtotal - discountAmount),
+              loyaltyRewardId: loyaltyReward?.id ?? null,
+              loyaltyDiscountAmount,
+              total: Math.max(0, round2(orderSubtotal - discountAmount - loyaltyDiscountAmount)),
               customerName: input.customer.name,
               customerPhone: input.customer.phone,
               idempotencyKey,
               notes: input.notes,
+              ...(deliveryQuote && input.delivery
+                ? {
+                    deliveryAddress: input.delivery.address,
+                    deliveryNeighborhood: input.delivery.neighborhood,
+                    deliveryReference: input.delivery.reference ?? null,
+                    deliveryLatitude: input.delivery.latitude,
+                    deliveryLongitude: input.delivery.longitude,
+                    deliveryDistanceKm: deliveryQuote.distanceKm,
+                    deliveryFee: deliveryQuote.fee,
+                  }
+                : {}),
               items: {
-                create: items.map((item) => ({ ...item, options: { create: item.options } })),
+                create: [...items, ...(rewardItem ? [rewardItem] : [])].map((item) => ({
+                  ...item,
+                  options: { create: item.options },
+                })),
               },
               statusHistory: { create: { status: 'PENDING' } },
             },
@@ -386,7 +536,28 @@ export class PrismaOrderRepository implements OrderRepository {
               data: { usedOrderId: order.id },
             });
           }
-          return { id: order.id, createdAt: order.createdAt };
+          if (loyaltyReward) {
+            await markRewardRedeemedInTx(tx, {
+              rewardId: loyaltyReward.id,
+              orderId: order.id,
+              userId: source === 'RESTAURANT' ? (actorUserId ?? null) : null,
+              now,
+            });
+          }
+          // Cliente nuevo con programa activo: recibe su tarjeta y la llave para guardarla.
+          let loyaltyCardToken: string | null = null;
+          if (source === 'PUBLIC' && savedCustomer && !customerBefore) {
+            const program = await loadProgramRow(tx, businessId);
+            if (program?.enabled) {
+              const card = await ensureCardInTx(tx, businessId, savedCustomer.id);
+              const row = await tx.loyaltyCard.findUniqueOrThrow({
+                where: { id: card.id },
+                select: { publicToken: true },
+              });
+              loyaltyCardToken = row.publicToken;
+            }
+          }
+          return { id: order.id, createdAt: order.createdAt, loyaltyCardToken };
         },
         { timeout: 15_000 },
       );
@@ -423,7 +594,10 @@ export class PrismaOrderRepository implements OrderRepository {
       include: orderInclude,
     });
     if (!order) throw new Error('Created order could not be loaded');
-    const mapped = await toDomain(order);
+    const domain = await toDomain(order);
+    const mapped = created.loyaltyCardToken
+      ? Order.create({ ...domain.toJSON(), loyaltyCardToken: created.loyaltyCardToken })
+      : domain;
     if (mapped.toJSON().paymentMethod === 'TRANSFER') {
       const card = await this.prisma.restaurantPaymentCard.findUnique({
         where: { businessId },
@@ -553,6 +727,12 @@ export class PrismaOrderRepository implements OrderRepository {
         if (!existing) throw new OrderNotFoundError();
         if (existing.status !== 'PENDING' && existing.status !== 'PREPARING')
           throw new OrderNotEditableError(existing.status);
+        if (
+          existing.fulfillmentType === 'DELIVERY' &&
+          input.fulfillmentType !== undefined &&
+          input.fulfillmentType !== existing.fulfillmentType
+        )
+          throw new OrderDeliveryFulfillmentLockedError();
 
         const productIds = input.items.map((item) => item.productId);
         const products = await tx.product.findMany({
@@ -761,7 +941,29 @@ export class PrismaOrderRepository implements OrderRepository {
         // Product discounts are already reflected in each item's final unit price.
         // The order-level discount is the persisted customer discount snapshot.
         const discountAmount = existing.discountAmount.toNumber();
-        const total = Math.max(0, subtotal - discountAmount);
+        // Premio de lealtad canjeado en este pedido: se recalcula con los productos nuevos
+        // (porcentaje sobre el nuevo subtotal, monto fijo sin pasar del subtotal, producto
+        // regalado = su renglón si sigue en el pedido).
+        const activeReward =
+          existing.loyaltyReward &&
+          existing.loyaltyReward.status === 'REDEEMED' &&
+          existing.loyaltyReward.redeemedOrderId === existing.id
+            ? existing.loyaltyReward
+            : null;
+        const loyaltyDiscountAmount = activeReward
+          ? calculateRewardDiscount(
+              { type: activeReward.rewardType, value: activeReward.rewardValue.toNumber() },
+              {
+                base: subtotal - discountAmount,
+                freeProductPrice:
+                  activeReward.rewardType === 'FREE_PRODUCT'
+                    ? (builtItems.find((item) => item.productId === activeReward.rewardProductId)
+                        ?.unitPriceFinal ?? 0)
+                    : null,
+              },
+            )
+          : 0;
+        const total = Math.max(0, round2(subtotal - discountAmount - loyaltyDiscountAmount));
         const before = {
           customerName: existing.customerName,
           customerPhone: existing.customerPhone,
@@ -782,6 +984,7 @@ export class PrismaOrderRepository implements OrderRepository {
           })),
           subtotal: existing.subtotal.toNumber(),
           discountAmount: existing.discountAmount.toNumber(),
+          loyaltyDiscountAmount: existing.loyaltyDiscountAmount.toNumber(),
           total: existing.total.toNumber(),
         };
         const after = {
@@ -799,6 +1002,7 @@ export class PrismaOrderRepository implements OrderRepository {
           items: builtItems,
           subtotal,
           discountAmount,
+          loyaltyDiscountAmount,
           total,
         };
         const changed = await tx.order.updateMany({
@@ -818,6 +1022,7 @@ export class PrismaOrderRepository implements OrderRepository {
             notes: after.notes,
             subtotal,
             discountAmount,
+            loyaltyDiscountAmount,
             total,
             version: { increment: 1 },
           },
@@ -887,6 +1092,7 @@ export class PrismaOrderRepository implements OrderRepository {
     timings: OrderStatusTimings = {},
   ) {
     const transactionStartedAt = performance.now();
+    let cancelledDeliveryOrderId: string | null = null;
     const update = await this.prisma.$transaction(async (tx) => {
       const lookupStartedAt = performance.now();
       const existing = await tx.order.findFirst({
@@ -896,6 +1102,10 @@ export class PrismaOrderRepository implements OrderRepository {
           businessId: true,
           orderNumber: true,
           status: true,
+          fulfillmentType: true,
+          customerId: true,
+          total: true,
+          delivery: { select: { id: true, status: true } },
           _count: { select: { statusHistory: true } },
           statusHistory: {
             orderBy: { createdAt: 'desc' },
@@ -906,7 +1116,14 @@ export class PrismaOrderRepository implements OrderRepository {
       });
       timings.lookupMs = performance.now() - lookupStartedAt;
       if (!existing) return null;
-      if (!allowedTransitions[existing.status].includes(status))
+      if (
+        !isStatusChangeAllowed(
+          existing.status,
+          status,
+          existing.fulfillmentType === 'DELIVERY',
+          existing.delivery?.status ?? null,
+        )
+      )
         throw new OrderInvalidStatusTransitionError(existing.status, status);
 
       const databaseStatus = status as PrismaOrderStatus;
@@ -931,11 +1148,55 @@ export class PrismaOrderRepository implements OrderRepository {
         throw new OrderInvalidStatusTransitionError(current.status, status);
       }
 
+      // Cancelar el pedido cancela su entrega pendiente o tomada (en la misma transacción).
+      // Si justo la entregaron al repartidor, el cambio condicionado falla y se revierte todo.
+      if (
+        status === 'CANCELLED' &&
+        existing.delivery &&
+        (existing.delivery.status === 'PENDING' || existing.delivery.status === 'ACCEPTED')
+      ) {
+        const cancelled = await tx.delivery.updateMany({
+          where: { id: existing.delivery.id, status: { in: ['PENDING', 'ACCEPTED'] } },
+          data: { status: 'CANCELLED', cancelledAt: updatedAt },
+        });
+        if (cancelled.count !== 1) {
+          throw new OrderInvalidStatusTransitionError(existing.status, status);
+        }
+        cancelledDeliveryOrderId = existing.id;
+      }
+
       const historyStartedAt = performance.now();
       await tx.orderStatusHistory.create({
         data: { orderId, status: databaseStatus, createdAt: updatedAt },
       });
       timings.historyMs = performance.now() - historyStartedAt;
+
+      // Tarjeta de lealtad, en la MISMA transacción:
+      // - Cancelar devuelve el premio canjeado y anula un sello vigente.
+      // - Finalizar ("Listo" en local/para llevar) sella solo en modo automático o
+      //   informa si se puede dar el sello a mano.
+      let loyalty: OrderStatusLoyalty | null = null;
+      if (status === 'CANCELLED') {
+        await onOrderCancelledInTx(tx, {
+          businessId: existing.businessId,
+          orderId,
+          userId: ownerUserId,
+          now: updatedAt,
+        });
+      } else if (status === 'READY' && existing.fulfillmentType !== 'DELIVERY') {
+        const auto = await autoStampOrderInTx(tx, {
+          businessId: existing.businessId,
+          orderId,
+          createdByUserId: ownerUserId,
+          now: updatedAt,
+        });
+        loyalty = statusLoyalty(auto, {
+          status,
+          fulfillmentType: existing.fulfillmentType,
+          customerId: existing.customerId,
+          total: existing.total.toNumber(),
+        });
+      }
       return {
         id: existing.id,
         businessId: existing.businessId,
@@ -943,6 +1204,7 @@ export class PrismaOrderRepository implements OrderRepository {
         status,
         updatedAt,
         statusRevision: existing._count.statusHistory + 1,
+        loyalty,
       };
     });
     timings.transactionMs = performance.now() - transactionStartedAt;
@@ -976,15 +1238,77 @@ export class PrismaOrderRepository implements OrderRepository {
         }
       });
       timings.eventQueueMs = performance.now() - queueStartedAt;
+      if (cancelledDeliveryOrderId) {
+        const businessId = update.businessId;
+        const deliveryOrderId = cancelledDeliveryOrderId;
+        setImmediate(() => {
+          try {
+            orderEventHub.publishDeliveryUpdated({
+              orderId: deliveryOrderId,
+              businessId,
+              deliveryStatus: 'CANCELLED',
+            });
+          } catch {
+            // Igual que arriba: el commit no depende del SSE.
+          }
+        });
+      }
     }
     return update;
   }
+}
+
+/** Resumen de lealtad para la respuesta de "Listo" (aviso del sello en la comanda). */
+function statusLoyalty(
+  auto: Awaited<ReturnType<typeof autoStampOrderInTx>>,
+  order: Parameters<typeof orderStampBlocker>[0],
+): OrderStatusLoyalty | null {
+  const { program, outcome } = auto;
+  if (!program) return null;
+  if (program.stampMode === 'MANUAL') {
+    return { mode: 'MANUAL', stamped: null, eligible: orderStampBlocker(order, program) === null };
+  }
+  const stamped =
+    outcome && (outcome.kind === 'STAMPED' || outcome.kind === 'ALREADY_STAMPED')
+      ? {
+          customerFirstName: outcome.customerFirstName,
+          // Al completar, el conteo vuelve a 0: se informa la posición del sello (8 de 8).
+          stampsCount: outcome.stamp.position,
+          stampsRequired: outcome.card.stampsRequired,
+          completed: outcome.reward !== null,
+          rewardLabel: outcome.reward?.label ?? null,
+        }
+      : null;
+  return { mode: 'AUTO', stamped, eligible: false };
+}
+
+/**
+ * Reglas extra de pedidos a domicilio (los demás pedidos no cambian):
+ * - "Lista" todavía no es final: se puede cancelar mientras no vaya en camino.
+ * - "En camino" solo se cancela si la entrega falló (el dueño decide qué hacer).
+ * - Con la entrega en manos del repartidor (PICKED_UP) no se puede cancelar.
+ */
+function isStatusChangeAllowed(
+  from: OrderStatus,
+  to: OrderStatus,
+  isDeliveryOrder: boolean,
+  deliveryStatus: string | null,
+): boolean {
+  if (to === 'CANCELLED' && deliveryStatus === 'PICKED_UP') return false;
+  if (allowedTransitions[from].includes(to)) return true;
+  if (!isDeliveryOrder || to !== 'CANCELLED') return false;
+  if (from === 'READY') return true;
+  if (from === 'OUT_FOR_DELIVERY') return deliveryStatus === 'FAILED';
+  return false;
 }
 
 const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ['PREPARING', 'CANCELLED'],
   PREPARING: ['READY', 'CANCELLED'],
   READY: [],
+  // Estados de entrega a domicilio: solo los mueve el flujo de entregas, nunca este endpoint.
+  OUT_FOR_DELIVERY: [],
+  DELIVERED: [],
   CANCELLED: [],
 };
 
@@ -1032,6 +1356,71 @@ async function toDomain(
       status: entry.status as OrderStatus,
       createdAt: entry.createdAt,
     })),
+    deliveryFee: row.deliveryFee?.toNumber?.() ?? 0,
+    delivery:
+      row.fulfillmentType === 'DELIVERY' &&
+      row.deliveryAddress &&
+      row.deliveryLatitude &&
+      row.deliveryLongitude
+        ? {
+            address: row.deliveryAddress,
+            neighborhood: row.deliveryNeighborhood ?? null,
+            reference: row.deliveryReference ?? null,
+            latitude: row.deliveryLatitude.toNumber(),
+            longitude: row.deliveryLongitude.toNumber(),
+            distanceKm: row.deliveryDistanceKm?.toNumber() ?? 0,
+          }
+        : null,
+    transferConfirmedAt: row.transferConfirmedAt ?? null,
+    dispatch: row.delivery
+      ? {
+          status: row.delivery.status,
+          offerCreatedAt: new Date(row.delivery.offerExpiresAt.getTime() - OFFER_TTL_MS),
+          offerExpiresAt: row.delivery.offerExpiresAt,
+          acceptedAt: row.delivery.acceptedAt,
+          handedOffAt: row.delivery.handedOffAt,
+          deliveredAt: row.delivery.deliveredAt,
+          failedAt: row.delivery.failedAt,
+          cancelledAt: row.delivery.cancelledAt,
+          failureReason: row.delivery.failureReason,
+          foodTotal: row.delivery.foodTotal.toNumber(),
+          deliveryFee: row.delivery.deliveryFee.toNumber(),
+          paymentMethod: row.delivery.paymentMethod,
+          amountCourierAdvances: row.delivery.amountCourierAdvances.toNumber(),
+          amountCourierCollects: row.delivery.amountCourierCollects.toNumber(),
+          courier: row.delivery.courier,
+        }
+      : null,
+    loyaltyDiscountAmount: row.loyaltyDiscountAmount?.toNumber?.() ?? 0,
+    loyaltyReward: row.loyaltyReward
+      ? {
+          id: row.loyaltyReward.id,
+          type: row.loyaltyReward.rewardType,
+          label: row.loyaltyReward.rewardLabel,
+          active:
+            row.loyaltyReward.status === 'REDEEMED' && row.loyaltyReward.redeemedOrderId === row.id,
+        }
+      : null,
+    loyaltyStamp: row.loyaltyStamps?.[0] ?? null,
   };
   return Order.create(props);
+}
+
+async function quoteOrderDelivery(
+  tx: Prisma.TransactionClient,
+  businessId: string,
+  source: OrderSource,
+  input: CreateOrderDTO,
+) {
+  // El pedido manual del restaurante no maneja domicilio (fuera de alcance).
+  if (source !== 'PUBLIC' || !input.delivery || input.expectedDeliveryFee === undefined) {
+    throw new DeliveryDestinationInvalidError();
+  }
+  const settings = await loadDeliverySettings(tx, businessId);
+  if (!settings) throw new OrderBusinessNotFoundError();
+  return confirmDeliveryQuote(
+    settings,
+    { latitude: input.delivery.latitude, longitude: input.delivery.longitude },
+    input.expectedDeliveryFee,
+  );
 }

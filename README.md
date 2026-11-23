@@ -44,7 +44,7 @@ configura o deja de responder, el catálogo continúa consultando PostgreSQL.
 
 En Render agrega únicamente la variable `REDIS_URL` en el servicio backend,
 usando la URL TLS privada de Upstash (`rediss://...`). No la expongas en el
-frontend ni la escribas en logs. El TTL inicial del catálogo es de 5 minutos;
+frontend ni la escribas en logs. El TTL del catálogo es de 15 minutos;
 las mutaciones exitosas de negocio, menú, categorías, productos, opciones,
 descuentos, configuración pública e información de pago invalidan la caché.
 

@@ -8,6 +8,23 @@ export type OrderStatusUpdate = {
   status: OrderStatus;
   updatedAt: Date;
   statusRevision: number;
+  /** Tarjeta de lealtad al finalizar: sello automático o si se puede dar a mano. */
+  loyalty?: OrderStatusLoyalty | null;
+};
+
+export type OrderStatusLoyalty = {
+  mode: 'MANUAL' | 'AUTO';
+  /** Sello dado en esta misma transacción (modo automático). */
+  stamped: {
+    customerFirstName: string | null;
+    stampsCount: number;
+    stampsRequired: number;
+    /** El sello completó la tarjeta y generó un premio. */
+    completed: boolean;
+    rewardLabel: string | null;
+  } | null;
+  /** Modo manual: el pedido cumple las reglas para "Dar sello". */
+  eligible: boolean;
 };
 
 export type OrderStatusTimings = {

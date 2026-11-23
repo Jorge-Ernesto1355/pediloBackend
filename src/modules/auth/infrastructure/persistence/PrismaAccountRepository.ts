@@ -5,6 +5,8 @@ import { EmailVerificationTokenRepository } from '../../application/ports/EmailV
 const generatedOrderStatuses: OrderStatus[] = [
   OrderStatus.PREPARING,
   OrderStatus.READY,
+  OrderStatus.OUT_FOR_DELIVERY,
+  OrderStatus.DELIVERED,
 ];
 
 export class PrismaAccountRepository implements AccountRepository {

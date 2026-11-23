@@ -22,6 +22,23 @@ export interface CreateOrderDTO {
   expectedTotal?: number;
   acceptPriceChange?: boolean;
   paymentMethod?: OrderPaymentMethod;
+  /** Solo pedidos públicos a domicilio. */
+  delivery?: {
+    address: string;
+    neighborhood: string;
+    reference?: string | null;
+    latitude: number;
+    longitude: number;
+  };
+  /** Envío que vio el cliente; el servidor lo recalcula y debe coincidir. */
+  expectedDeliveryFee?: number;
+  /**
+   * Pedido público: canje del premio de lealtad con la llave de la tarjeta (nunca con el
+   * teléfono). `expectedDiscount` es el descuento que vio el cliente; debe coincidir.
+   */
+  loyalty?: { cardToken: string; rewardId: string; expectedDiscount: number };
+  /** Pedido del restaurante ("Nueva orden"): premio del cliente elegido a aplicar. */
+  loyaltyRewardId?: string;
 }
 export interface ListOrdersDTO {
   businessId: string;

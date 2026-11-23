@@ -7,7 +7,7 @@ import type {
 import { AppError } from '@/shared/errors/app-error.js';
 import { getBusinessPeriodRange } from '@/shared/time/business-period.js';
 
-const saleStatuses = ['PREPARING', 'READY'];
+const saleStatuses = ['PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
 
 interface TotalRow {
   currentTotal: Prisma.Decimal | number | null;

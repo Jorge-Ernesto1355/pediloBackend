@@ -84,7 +84,7 @@ describe('PrismaCustomerRepository phone identity', () => {
       expect.objectContaining({
         include: expect.objectContaining({
           orders: {
-            where: { status: { in: ['PREPARING', 'READY'] } },
+            where: { status: { in: ['PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] } },
             select: { total: true },
           },
         }),

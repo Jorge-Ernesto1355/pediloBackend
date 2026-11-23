@@ -11,7 +11,9 @@ interface HistoricalRow {
 }
 
 const saleStatuses = Prisma.join(
-  ['PREPARING', 'READY'].map((status) => Prisma.sql`${status}::"OrderStatus"`),
+  ['PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'].map(
+    (status) => Prisma.sql`${status}::"OrderStatus"`,
+  ),
 );
 
 export class PrismaHistoricalSalesRepository implements HistoricalSalesRepository {
