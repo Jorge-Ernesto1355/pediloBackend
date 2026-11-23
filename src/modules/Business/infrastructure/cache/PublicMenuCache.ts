@@ -14,7 +14,7 @@ export interface RedisCacheConnection {
   get(): RedisCacheCommands | null;
 }
 
-const TTL_SECONDS = 5 * 60;
+const TTL_SECONDS = 15 * 60;
 const COMMAND_TIMEOUT_MS = 250;
 const LOCK_TTL_MS = 2_000;
 const KEY_PREFIX = 'pedilo:public-menu:v1';
