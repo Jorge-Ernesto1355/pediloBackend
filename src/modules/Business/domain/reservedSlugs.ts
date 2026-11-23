@@ -3,8 +3,9 @@
  * (pedilo.app/:slug). Un negocio no puede usarlas como slug.
  * - `e`: oferta de entrega para repartidores (/e/:token).
  * - `entrega`: link personal del repartidor (/entrega/:token).
+ * - `tarjeta`: tarjeta de lealtad del cliente (/tarjeta/:token).
  */
-export const RESERVED_BUSINESS_SLUGS: readonly string[] = ['e', 'entrega'];
+export const RESERVED_BUSINESS_SLUGS: readonly string[] = ['e', 'entrega', 'tarjeta'];
 
 export function isReservedBusinessSlug(slug: string): boolean {
   return RESERVED_BUSINESS_SLUGS.includes(slug.trim().toLowerCase());

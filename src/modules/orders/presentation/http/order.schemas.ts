@@ -46,6 +46,15 @@ export const createOrderSchema = z
     acceptPriceChange: z.boolean().optional(),
     delivery: deliveryAddressSchema.optional(),
     expectedDeliveryFee: z.number().finite().nonnegative().optional(),
+    // Premio de lealtad: se identifica con la llave de la tarjeta, nunca con el teléfono.
+    loyalty: z
+      .object({
+        cardToken: z.string().min(1).max(64),
+        rewardId: z.string().trim().min(1).max(128),
+        expectedDiscount: z.number().finite().nonnegative(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -79,8 +88,19 @@ export const createRestaurantOrderSchema = z
     items: z.array(itemSchema).min(1).max(100),
     fulfillmentType: z.enum(['DINE_IN', 'PICKUP']).optional(),
     notes: z.string().trim().max(200).nullable().optional(),
+    /** "Aplicar premio": premio disponible del cliente del pedido (por teléfono). */
+    loyaltyRewardId: z.string().trim().min(1).max(128).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.loyaltyRewardId && !value.customerPhone) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['loyaltyRewardId'],
+        message: 'Elige al cliente para aplicar su premio.',
+      });
+    }
+  });
 export const orderStatusSchema = z
   .object({
     status: z.enum(['PENDING', 'PREPARING', 'READY', 'CANCELLED']),
