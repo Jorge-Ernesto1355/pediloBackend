@@ -6,6 +6,8 @@ import {
 } from '../../application/ports/PublicBusinessRepository.js';
 import { resolveProductImageUrl } from '@/shared/images/product-image.js';
 import { bestDiscountFor, formatLabel } from '@/modules/Discount/domain/pricing.js';
+import { isDeliveryAvailable } from '@/modules/delivery/domain/deliverySettings.js';
+import { parseFeeConfig } from '@/modules/delivery/domain/feePolicy.js';
 
 const catalogInclude = {
   businessSchedule: true,
@@ -102,7 +104,23 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
 
     const settings = await this.prisma.businessSettings.findUnique({
       where: { businessId: row.id },
-      select: { whatsapp: true },
+      select: {
+        whatsapp: true,
+        deliveryEnabled: true,
+        maxDeliveryKm: true,
+        deliveryFeeConfig: true,
+      },
+    });
+    const deliveryAvailable = isDeliveryAvailable({
+      enabled: settings?.deliveryEnabled ?? false,
+      origin: row.ubicationMaps
+        ? {
+            latitude: row.ubicationMaps.latitude.toNumber(),
+            longitude: row.ubicationMaps.longitude.toNumber(),
+          }
+        : null,
+      maxDeliveryKm: settings?.maxDeliveryKm?.toNumber() ?? null,
+      feeConfig: parseFeeConfig(settings?.deliveryFeeConfig),
     });
     const paymentCardAvailable = Boolean(
       await this.prisma.restaurantPaymentCard.findFirst({ where: { businessId: row.id, isActive: true }, select: { id: true } }),
@@ -124,6 +142,10 @@ export class PrismaPublicBusinessRepository implements PublicBusinessRepository 
         whatsappNumber: settings?.whatsapp ?? null,
         paymentCardAvailable,
         payment_card_available: paymentCardAvailable,
+        delivery: {
+          enabled: deliveryAvailable,
+          maxDeliveryKm: deliveryAvailable ? (settings?.maxDeliveryKm?.toNumber() ?? null) : null,
+        },
         ubicationMaps: row.ubicationMaps
           ? {
               latitude: row.ubicationMaps.latitude.toNumber(),

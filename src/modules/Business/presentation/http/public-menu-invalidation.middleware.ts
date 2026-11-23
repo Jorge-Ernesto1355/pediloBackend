@@ -34,7 +34,7 @@ async function resolveBusinessId(request: Parameters<RequestHandler>[0]): Promis
   if (second === 'menus' || second === 'categories' || second === 'products' || second === 'discounts') {
     return first;
   }
-  if (first === 'settings' || first === 'payment-card') {
+  if (first === 'settings' || first === 'payment-card' || first === 'delivery-settings') {
     return businessForUser(request);
   }
   if (first === 'menus') return businessFromMenu(resource[1]);

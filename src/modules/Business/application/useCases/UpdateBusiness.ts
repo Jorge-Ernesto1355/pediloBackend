@@ -5,6 +5,7 @@ import {
   BusinessNotFoundError,
 } from '../../domain/errors/BusinessErrors.js';
 import { BusinessRepository } from '../../domain/ports/BusinessRepository.js';
+import { isReservedBusinessSlug } from '../../domain/reservedSlugs.js';
 import { UpdateBusinessDTO } from '../dto/BusinessDTO.js';
 import { ImageStorage } from '../ports/ImageStorage.js';
 import { BusinessImageType } from '../../domain/Entities/BusinessImage.js';
@@ -22,7 +23,7 @@ export class UpdateBusiness {
     if (
       dto.slug &&
       dto.slug !== owned.slug &&
-      (await this.businessRepository.getBySlug(dto.slug))
+      (isReservedBusinessSlug(dto.slug) || (await this.businessRepository.getBySlug(dto.slug)))
     ) {
       throw new BusinessAlreadyExistsError();
     }

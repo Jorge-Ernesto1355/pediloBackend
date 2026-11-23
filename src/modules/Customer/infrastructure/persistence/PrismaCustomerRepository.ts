@@ -161,11 +161,12 @@ export class PrismaCustomerRepository implements CustomerRepository {
 }
 
 // CONFIRMED y COMPLETED fueron migrados a PREPARING y READY respectivamente.
-// Solo estos estados representan pedidos que cuentan como gasto del cliente.
+// Solo estos estados (más los de domicilio OUT_FOR_DELIVERY y DELIVERED)
+// representan pedidos que cuentan como gasto del cliente.
 const customerFinancialsInclude = {
   _count: { select: { orders: true } },
   orders: {
-    where: { status: { in: ['PREPARING', 'READY'] } },
+    where: { status: { in: ['PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] } },
     select: { total: true },
   },
 } satisfies Prisma.CustomerInclude;

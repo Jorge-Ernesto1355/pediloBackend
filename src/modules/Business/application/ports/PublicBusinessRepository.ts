@@ -11,6 +11,8 @@ export interface PublicBusinessCatalog {
     whatsappNumber: string | null;
     paymentCardAvailable: boolean;
     payment_card_available?: boolean;
+    /** Envío a domicilio: solo `enabled` si la configuración está completa y válida. */
+    delivery?: { enabled: boolean; maxDeliveryKm: number | null };
     ubication: string | null;
     ubicationMaps: { latitude: number; longitude: number } | null;
     businessSchedule: {

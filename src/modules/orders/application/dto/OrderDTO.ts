@@ -22,6 +22,16 @@ export interface CreateOrderDTO {
   expectedTotal?: number;
   acceptPriceChange?: boolean;
   paymentMethod?: OrderPaymentMethod;
+  /** Solo pedidos públicos a domicilio. */
+  delivery?: {
+    address: string;
+    neighborhood: string;
+    reference?: string | null;
+    latitude: number;
+    longitude: number;
+  };
+  /** Envío que vio el cliente; el servidor lo recalcula y debe coincidir. */
+  expectedDeliveryFee?: number;
 }
 export interface ListOrdersDTO {
   businessId: string;

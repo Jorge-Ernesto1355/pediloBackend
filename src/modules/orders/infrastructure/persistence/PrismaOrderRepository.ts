@@ -24,6 +24,7 @@ import {
   OrderTransferUnavailableError,
   OrderNotFoundError,
   OrderNotEditableError,
+  OrderDeliveryFulfillmentLockedError,
   OrderVersionConflictError,
   OrderCustomerNotFoundError,
 } from '../../domain/errors/OrderErrors.js';
@@ -35,6 +36,10 @@ import { CustomerDiscountApplicationFailedError } from '@/modules/CustomerDiscou
 import { CustomerDisabledError } from '@/modules/Customer/domain/errors/CustomerErrors.js';
 import { resolveComboSelections } from '../../domain/comboSelection.js';
 import { bestDiscountFor, priceWithDiscount } from '@/modules/Discount/domain/pricing.js';
+import { confirmDeliveryQuote } from '@/modules/delivery/domain/deliverySettings.js';
+import { DeliveryDestinationInvalidError } from '@/modules/delivery/domain/errors/DeliveryErrors.js';
+import { loadDeliverySettings } from '@/modules/delivery/infrastructure/persistence/PrismaDeliverySettingsRepository.js';
+import { OFFER_TTL_MS } from '@/modules/delivery/domain/deliveryTokens.js';
 
 const orderInclude = {
   items: {
@@ -44,6 +49,25 @@ const orderInclude = {
     },
   },
   statusHistory: { orderBy: { createdAt: 'asc' as const } },
+  // Estado de la entrega a domicilio para la comanda. Solo el repartidor de ESTA entrega.
+  delivery: {
+    select: {
+      status: true,
+      offerExpiresAt: true,
+      acceptedAt: true,
+      handedOffAt: true,
+      deliveredAt: true,
+      failedAt: true,
+      cancelledAt: true,
+      failureReason: true,
+      foodTotal: true,
+      deliveryFee: true,
+      paymentMethod: true,
+      amountCourierAdvances: true,
+      amountCourierCollects: true,
+      courier: { select: { name: true, phone: true } },
+    },
+  },
 };
 
 export class PrismaOrderRepository implements OrderRepository {
@@ -292,6 +316,12 @@ export class PrismaOrderRepository implements OrderRepository {
               }
             }
           }
+          // Envío a domicilio: se recalcula SIEMPRE aquí, con la configuración vigente.
+          // Si difiere del que vio el cliente, el pedido no se crea (DELIVERY_FEE_CHANGED).
+          const deliveryQuote =
+            input.fulfillmentType === 'DELIVERY'
+              ? await quoteOrderDelivery(tx, businessId, source, input)
+              : null;
           const last = await tx.order.aggregate({
             where: { businessId },
             _max: { orderNumber: true },
@@ -374,6 +404,17 @@ export class PrismaOrderRepository implements OrderRepository {
               customerPhone: input.customer.phone,
               idempotencyKey,
               notes: input.notes,
+              ...(deliveryQuote && input.delivery
+                ? {
+                    deliveryAddress: input.delivery.address,
+                    deliveryNeighborhood: input.delivery.neighborhood,
+                    deliveryReference: input.delivery.reference ?? null,
+                    deliveryLatitude: input.delivery.latitude,
+                    deliveryLongitude: input.delivery.longitude,
+                    deliveryDistanceKm: deliveryQuote.distanceKm,
+                    deliveryFee: deliveryQuote.fee,
+                  }
+                : {}),
               items: {
                 create: items.map((item) => ({ ...item, options: { create: item.options } })),
               },
@@ -553,6 +594,12 @@ export class PrismaOrderRepository implements OrderRepository {
         if (!existing) throw new OrderNotFoundError();
         if (existing.status !== 'PENDING' && existing.status !== 'PREPARING')
           throw new OrderNotEditableError(existing.status);
+        if (
+          existing.fulfillmentType === 'DELIVERY' &&
+          input.fulfillmentType !== undefined &&
+          input.fulfillmentType !== existing.fulfillmentType
+        )
+          throw new OrderDeliveryFulfillmentLockedError();
 
         const productIds = input.items.map((item) => item.productId);
         const products = await tx.product.findMany({
@@ -887,6 +934,7 @@ export class PrismaOrderRepository implements OrderRepository {
     timings: OrderStatusTimings = {},
   ) {
     const transactionStartedAt = performance.now();
+    let cancelledDeliveryOrderId: string | null = null;
     const update = await this.prisma.$transaction(async (tx) => {
       const lookupStartedAt = performance.now();
       const existing = await tx.order.findFirst({
@@ -896,6 +944,8 @@ export class PrismaOrderRepository implements OrderRepository {
           businessId: true,
           orderNumber: true,
           status: true,
+          fulfillmentType: true,
+          delivery: { select: { id: true, status: true } },
           _count: { select: { statusHistory: true } },
           statusHistory: {
             orderBy: { createdAt: 'desc' },
@@ -906,7 +956,14 @@ export class PrismaOrderRepository implements OrderRepository {
       });
       timings.lookupMs = performance.now() - lookupStartedAt;
       if (!existing) return null;
-      if (!allowedTransitions[existing.status].includes(status))
+      if (
+        !isStatusChangeAllowed(
+          existing.status,
+          status,
+          existing.fulfillmentType === 'DELIVERY',
+          existing.delivery?.status ?? null,
+        )
+      )
         throw new OrderInvalidStatusTransitionError(existing.status, status);
 
       const databaseStatus = status as PrismaOrderStatus;
@@ -929,6 +986,23 @@ export class PrismaOrderRepository implements OrderRepository {
         });
         if (!current) return null;
         throw new OrderInvalidStatusTransitionError(current.status, status);
+      }
+
+      // Cancelar el pedido cancela su entrega pendiente o tomada (en la misma transacción).
+      // Si justo la entregaron al repartidor, el cambio condicionado falla y se revierte todo.
+      if (
+        status === 'CANCELLED' &&
+        existing.delivery &&
+        (existing.delivery.status === 'PENDING' || existing.delivery.status === 'ACCEPTED')
+      ) {
+        const cancelled = await tx.delivery.updateMany({
+          where: { id: existing.delivery.id, status: { in: ['PENDING', 'ACCEPTED'] } },
+          data: { status: 'CANCELLED', cancelledAt: updatedAt },
+        });
+        if (cancelled.count !== 1) {
+          throw new OrderInvalidStatusTransitionError(existing.status, status);
+        }
+        cancelledDeliveryOrderId = existing.id;
       }
 
       const historyStartedAt = performance.now();
@@ -976,15 +1050,53 @@ export class PrismaOrderRepository implements OrderRepository {
         }
       });
       timings.eventQueueMs = performance.now() - queueStartedAt;
+      if (cancelledDeliveryOrderId) {
+        const businessId = update.businessId;
+        const deliveryOrderId = cancelledDeliveryOrderId;
+        setImmediate(() => {
+          try {
+            orderEventHub.publishDeliveryUpdated({
+              orderId: deliveryOrderId,
+              businessId,
+              deliveryStatus: 'CANCELLED',
+            });
+          } catch {
+            // Igual que arriba: el commit no depende del SSE.
+          }
+        });
+      }
     }
     return update;
   }
+}
+
+/**
+ * Reglas extra de pedidos a domicilio (los demás pedidos no cambian):
+ * - "Lista" todavía no es final: se puede cancelar mientras no vaya en camino.
+ * - "En camino" solo se cancela si la entrega falló (el dueño decide qué hacer).
+ * - Con la entrega en manos del repartidor (PICKED_UP) no se puede cancelar.
+ */
+function isStatusChangeAllowed(
+  from: OrderStatus,
+  to: OrderStatus,
+  isDeliveryOrder: boolean,
+  deliveryStatus: string | null,
+): boolean {
+  if (to === 'CANCELLED' && deliveryStatus === 'PICKED_UP') return false;
+  if (allowedTransitions[from].includes(to)) return true;
+  if (!isDeliveryOrder || to !== 'CANCELLED') return false;
+  if (from === 'READY') return true;
+  if (from === 'OUT_FOR_DELIVERY') return deliveryStatus === 'FAILED';
+  return false;
 }
 
 const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ['PREPARING', 'CANCELLED'],
   PREPARING: ['READY', 'CANCELLED'],
   READY: [],
+  // Estados de entrega a domicilio: solo los mueve el flujo de entregas, nunca este endpoint.
+  OUT_FOR_DELIVERY: [],
+  DELIVERED: [],
   CANCELLED: [],
 };
 
@@ -1032,6 +1144,60 @@ async function toDomain(
       status: entry.status as OrderStatus,
       createdAt: entry.createdAt,
     })),
+    deliveryFee: row.deliveryFee?.toNumber?.() ?? 0,
+    delivery:
+      row.fulfillmentType === 'DELIVERY' &&
+      row.deliveryAddress &&
+      row.deliveryLatitude &&
+      row.deliveryLongitude
+        ? {
+            address: row.deliveryAddress,
+            neighborhood: row.deliveryNeighborhood ?? null,
+            reference: row.deliveryReference ?? null,
+            latitude: row.deliveryLatitude.toNumber(),
+            longitude: row.deliveryLongitude.toNumber(),
+            distanceKm: row.deliveryDistanceKm?.toNumber() ?? 0,
+          }
+        : null,
+    transferConfirmedAt: row.transferConfirmedAt ?? null,
+    dispatch: row.delivery
+      ? {
+          status: row.delivery.status,
+          offerCreatedAt: new Date(row.delivery.offerExpiresAt.getTime() - OFFER_TTL_MS),
+          offerExpiresAt: row.delivery.offerExpiresAt,
+          acceptedAt: row.delivery.acceptedAt,
+          handedOffAt: row.delivery.handedOffAt,
+          deliveredAt: row.delivery.deliveredAt,
+          failedAt: row.delivery.failedAt,
+          cancelledAt: row.delivery.cancelledAt,
+          failureReason: row.delivery.failureReason,
+          foodTotal: row.delivery.foodTotal.toNumber(),
+          deliveryFee: row.delivery.deliveryFee.toNumber(),
+          paymentMethod: row.delivery.paymentMethod,
+          amountCourierAdvances: row.delivery.amountCourierAdvances.toNumber(),
+          amountCourierCollects: row.delivery.amountCourierCollects.toNumber(),
+          courier: row.delivery.courier,
+        }
+      : null,
   };
   return Order.create(props);
+}
+
+async function quoteOrderDelivery(
+  tx: Prisma.TransactionClient,
+  businessId: string,
+  source: OrderSource,
+  input: CreateOrderDTO,
+) {
+  // El pedido manual del restaurante no maneja domicilio (fuera de alcance).
+  if (source !== 'PUBLIC' || !input.delivery || input.expectedDeliveryFee === undefined) {
+    throw new DeliveryDestinationInvalidError();
+  }
+  const settings = await loadDeliverySettings(tx, businessId);
+  if (!settings) throw new OrderBusinessNotFoundError();
+  return confirmDeliveryQuote(
+    settings,
+    { latitude: input.delivery.latitude, longitude: input.delivery.longitude },
+    input.expectedDeliveryFee,
+  );
 }
