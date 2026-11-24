@@ -35,6 +35,16 @@ export class OrderNotEditableError extends AppError {
     super(`Order cannot be edited while it is ${status}`, 409, 'ORDER_NOT_EDITABLE');
   }
 }
+/** Un pedido a domicilio conserva su modalidad: tiene dirección, envío y entrega propios. */
+export class OrderDeliveryFulfillmentLockedError extends AppError {
+  constructor() {
+    super(
+      'A home delivery order cannot change its fulfillment type',
+      409,
+      'ORDER_DELIVERY_FULFILLMENT_LOCKED',
+    );
+  }
+}
 export class OrderVersionConflictError extends AppError {
   readonly details: { expectedVersion: number; currentVersion: number };
 

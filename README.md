@@ -48,6 +48,14 @@ frontend ni la escribas en logs. El TTL inicial del catálogo es de 5 minutos;
 las mutaciones exitosas de negocio, menú, categorías, productos, opciones,
 descuentos, configuración pública e información de pago invalidan la caché.
 
+Las lecturas autenticadas utilizadas por `/create-menu` también usan Redis con
+un TTL de 15 minutos y claves aisladas por usuario. Incluye negocio (`/mine`),
+menús, categorías, productos, opciones locales, combos y grupos globales. Cada
+mutación exitosa incrementa una versión de caché para evitar servir datos
+anteriores. Configuración, descuentos y tarjeta de transferencia no se guardan
+en esta caché. Si Redis no está configurado o falla, todas las rutas continúan
+consultando PostgreSQL normalmente.
+
 ## Scripts
 
 - `npm run dev`: servidor en modo watch.

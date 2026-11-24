@@ -247,7 +247,7 @@ export class PrismaProductRepository implements ProductRepository, ProductManage
   private async analyticsRows(filters: ProductAnalyticsFilter): Promise<AnalyticsRow[]> {
     const conditions = [
       Prisma.sql`o."businessId" = ${filters.businessId}`,
-      Prisma.sql`o."status" IN ('PREPARING', 'READY')`,
+      Prisma.sql`o."status" IN ('PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED')`,
     ];
     if (filters.from) conditions.push(Prisma.sql`o."createdAt" >= ${startOfDay(filters.from)}`);
     if (filters.to) conditions.push(Prisma.sql`o."createdAt" <= ${endOfDay(filters.to)}`);

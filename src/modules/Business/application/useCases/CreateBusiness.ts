@@ -4,6 +4,7 @@ import {
     UserAlreadyHasBusinessError,
 } from '../../domain/errors/BusinessErrors.js';
 import { BusinessRepository } from '../../domain/ports/BusinessRepository.js';
+import { isReservedBusinessSlug } from '../../domain/reservedSlugs.js';
 import { CreateBusinessDTO } from '../dto/BusinessDTO.js';
 import { ImageStorage } from '../ports/ImageStorage.js';
 
@@ -18,7 +19,9 @@ export class CreateBusiness {
             throw new UserAlreadyHasBusinessError();
 
         const slug = dto.slug ?? slugify(dto.name);
-        if (await this.businessRepository.getBySlug(slug)) throw new BusinessAlreadyExistsError();
+        // Un slug reservado (rutas del repartidor) se trata como ocupado.
+        if (isReservedBusinessSlug(slug) || (await this.businessRepository.getBySlug(slug)))
+            throw new BusinessAlreadyExistsError();
 
         const business = await this.businessRepository.create({
             ...dto,

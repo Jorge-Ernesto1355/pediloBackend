@@ -12,6 +12,7 @@ import { PrismaMenuRepository } from '../../infrastructure/persistence/PrismaMen
 import { MenuController } from './MenuController.js';
 import { noConditionalCatalogCache } from './menu-cache.middleware.js';
 import { invalidatePublicMenuAfterSuccess } from '@/modules/Business/presentation/http/public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaMenuRepository(prisma);
 const controller = new MenuController(
@@ -27,9 +28,9 @@ const requireAuth = createRequireAuth(authProvider);
 export const menuRouter = Router();
 menuRouter.use(invalidatePublicMenuAfterSuccess);
 menuRouter.post('/:businessId/menus', requireAuth, controller.create);
-menuRouter.get('/mine/menus', requireAuth, noConditionalCatalogCache, controller.list);
-menuRouter.get('/:businessId/menus', requireAuth, controller.list);
-menuRouter.get('/menus/:id', requireAuth, controller.get);
+menuRouter.get('/mine/menus', requireAuth, noConditionalCatalogCache, cacheCreateMenuResponse, controller.list);
+menuRouter.get('/:businessId/menus', requireAuth, cacheCreateMenuResponse, controller.list);
+menuRouter.get('/menus/:id', requireAuth, cacheCreateMenuResponse, controller.get);
 menuRouter.patch('/menus/:id', requireAuth, controller.update);
 menuRouter.patch('/menus/:id/status', requireAuth, controller.setActive);
 menuRouter.delete('/menus/:id', requireAuth, controller.remove);

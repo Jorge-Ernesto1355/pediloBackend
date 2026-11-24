@@ -12,6 +12,7 @@ import { PrismaBusinessRepository } from '../../infrastructure/persistence/Prism
 import { BusinessController } from './BusinessController.js';
 import { CloudinaryImageStorage } from '../../infrastructure/storage/CloudinaryImageStorage.js';
 import { invalidatePublicMenuAfterSuccess } from './public-menu-invalidation.middleware.js';
+import { cacheCreateMenuResponse } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const repository = new PrismaBusinessRepository(prisma);
 const imageStorage = new CloudinaryImageStorage();
@@ -38,7 +39,7 @@ businessRouter.use(invalidatePublicMenuAfterSuccess);
 // The supported public business read endpoint is the catalog route.
 businessRouter.get('/', (_request, response) => response.status(200).json([]));
 businessRouter.get('/slug/:slug', (_request, response) => response.status(200).json({}));
-businessRouter.get('/mine', requireAuth, controller.getMine);
+businessRouter.get('/mine', requireAuth, cacheCreateMenuResponse, controller.getMine);
 businessRouter.post(
   '/',
   requireAuth,

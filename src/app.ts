@@ -32,6 +32,14 @@ import { trustedOriginGuard } from './shared/config/security/origin-guard.js';
 import { PasswordRecoveryRateLimiter } from './modules/auth/presentation/http/passwordRecoveryRateLimiter.js';
 import { analyticsRouter } from './modules/analytics/presentation/http/analytics.routes.js';
 import {
+  deliverySettingsRouter,
+  publicDeliveryRouter,
+} from './modules/delivery/presentation/http/delivery-settings.routes.js';
+import {
+  deliveryDispatchRouter,
+  publicDeliveryDispatchRouter,
+} from './modules/delivery/presentation/http/delivery-dispatch.routes.js';
+import {
   googleReviewRouter,
   googleReviewTrackingRouter,
 } from './modules/GoogleReviews/presentation/http/google-review.routes.js';
@@ -71,6 +79,8 @@ export function createApp() {
   app.use('/api/v1/account', accountRouter);
   // Debe ir antes de businessRouter porque ese router contiene GET /:id.
   app.use('/api/v1/businesses', businessSettingsRouter);
+  app.use('/api/v1/businesses', deliverySettingsRouter);
+  app.use('/api/v1/businesses', deliveryDispatchRouter);
   app.use('/api/v1/businesses', paymentCardRouter);
   app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
@@ -91,6 +101,8 @@ export function createApp() {
   app.use('/api/v1/businesses', orderRouter);
   app.use('/api/v1/businesses', inventoryRouter);
   app.use('/api/orders', orderEventsRouter);
+  app.use('/api/v1/public', publicDeliveryRouter);
+  app.use('/api/v1/public', publicDeliveryDispatchRouter);
   app.use('/api/v1/public', publicBusinessRouter);
   app.use('/api/v1/dashboard', salesRouter);
   app.use('/api/v1/analytics', analyticsRouter);

@@ -1,23 +1,25 @@
 import type { RequestHandler } from 'express';
 import { prisma } from '@/libs/prisma.js';
 import { publicMenuCache } from '../../infrastructure/cache/PublicMenuCache.js';
+import { createMenuResponseCache } from '@/shared/cache/CreateMenuResponseCache.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Invalidates only catalog-affecting routers after their database response succeeds. */
 export const invalidatePublicMenuAfterSuccess: RequestHandler = (request, response, next) => {
   if (!MUTATING_METHODS.has(request.method)) return next();
-
-  void resolveBusinessId(request).then((businessId) => {
-    if (!businessId) return next();
-    let invalidated = false;
-    response.once('finish', () => {
-      if (invalidated || response.statusCode < 200 || response.statusCode >= 300) return;
-      invalidated = true;
-      void publicMenuCache.invalidateBusiness(businessId);
+  // Resolve before the mutation as well so deletes can still invalidate a business
+  // that no longer exists by the time the response finishes.
+  const businessBeforeMutation = resolveBusinessId(request).catch(() => null);
+  response.once('finish', () => {
+    if (response.statusCode < 200 || response.statusCode >= 300) return;
+    if (request.user?.id) void createMenuResponseCache.invalidateUser(request.user.id);
+    void businessBeforeMutation.then(async (before) => {
+      const businessId = before ?? (await resolveBusinessId(request).catch(() => null));
+      if (businessId) void publicMenuCache.invalidateBusiness(businessId);
     });
-    next();
-  }).catch(() => next());
+  });
+  next();
 };
 
 async function resolveBusinessId(request: Parameters<RequestHandler>[0]): Promise<string | null> {
@@ -32,7 +34,7 @@ async function resolveBusinessId(request: Parameters<RequestHandler>[0]): Promis
   if (second === 'menus' || second === 'categories' || second === 'products' || second === 'discounts') {
     return first;
   }
-  if (first === 'settings' || first === 'payment-card') {
+  if (first === 'settings' || first === 'payment-card' || first === 'delivery-settings') {
     return businessForUser(request);
   }
   if (first === 'menus') return businessFromMenu(resource[1]);

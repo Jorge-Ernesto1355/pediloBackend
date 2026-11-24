@@ -37,6 +37,16 @@ export type StockAlertEvent = {
   createdAt: string;
 };
 
+/** Cambió la entrega a domicilio de un pedido (oferta, tomada, liberada, entregada…). */
+export type DeliveryUpdatedEvent = {
+  eventId: string;
+  type: 'delivery_updated';
+  orderId: string;
+  restaurantId: string;
+  deliveryStatus: string;
+  updatedAt: string;
+};
+
 type Connection = {
   id: string;
   userId: string;
@@ -156,6 +166,31 @@ export class OrderEventHub {
     for (const connection of connections.values()) {
       if (!this.write(connection, frame)) this.drop(connection);
     }
+  }
+
+  publishDeliveryUpdated(input: {
+    orderId: string;
+    businessId: string;
+    deliveryStatus: string;
+    updatedAt?: Date;
+  }): number {
+    const connections = this.connectionsByRestaurant.get(input.businessId);
+    if (!connections?.size) return 0;
+    const event: DeliveryUpdatedEvent = {
+      eventId: randomUUID(),
+      type: 'delivery_updated',
+      orderId: input.orderId,
+      restaurantId: input.businessId,
+      deliveryStatus: input.deliveryStatus,
+      updatedAt: (input.updatedAt ?? new Date()).toISOString(),
+    };
+    const frame = `id: ${event.eventId}\nevent: delivery_updated\ndata: ${JSON.stringify(event)}\n\n`;
+    let delivered = 0;
+    for (const connection of connections.values()) {
+      if (!this.write(connection, frame)) this.drop(connection);
+      else delivered += 1;
+    }
+    return delivered;
   }
 
   publishOrderStatusUpdated(input: {
