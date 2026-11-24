@@ -153,6 +153,11 @@ model Business {
   paymentCard       RestaurantPaymentCard?
   slugHistory       BusinessSlugHistory[]
   globalOptionGroups GlobalOptionGroup[]
+  ingredients        Ingredient[]
+  recipeItems        RecipeItem[]
+  stockMovements     StockMovement[]
+  stockAlerts        StockAlert[]
+  inventorySettings  InventorySettings?
 }
 
 model BusinessSlugHistory {
@@ -337,6 +342,7 @@ model Product {
   comboIncludes     ComboIncludedProduct[] @relation("ComboRequiredItems")
   orderItems        OrderItem[]
   discountProducts  DiscountProduct[]
+  recipeItems        RecipeItem[]
 
   @@index([businessId, isAvailable, createdAt])
   @@index([businessId, categoryId])
@@ -383,6 +389,7 @@ model ProductOption {
   updatedAt     DateTime @updatedAt
 
   optionGroup ProductOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  recipeItems RecipeItem[]
 
   @@index([optionGroupId, sortOrder])
 }
@@ -421,6 +428,7 @@ model GlobalOption {
   updatedAt     DateTime @updatedAt
 
   group GlobalOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  recipeItems RecipeItem[]
 
   @@index([groupId, sortOrder])
 }
@@ -743,6 +751,12 @@ model OrderItemOption {
   groupName String?
   price     Decimal @db.Decimal(10, 2)
 
+  // Snapshot of the catalog option the customer picked. Plain columns (no FK) so
+  // deleting an option never rewrites order history; inventory reads them to
+  // find the option's recipe when the order is marked READY.
+  productOptionId String?
+  globalOptionId  String?
+
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 }
 
@@ -764,6 +778,160 @@ model BusinessSchedule {
   openTime   String
   closeTime  String
   isClosed   Boolean @default(false)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+enum IngredientUnit {
+  G
+  ML
+  UNIT
+}
+
+enum LowStockMode {
+  PERCENT
+  ABSOLUTE
+}
+
+enum StockMovementType {
+  PURCHASE
+  CONSUMPTION
+  WASTE
+  ADJUSTMENT
+}
+
+enum StockAlertKind {
+  STOCK
+  CONSUMPTION
+}
+
+enum StockAlertLevel {
+  LOW
+  CRITICAL
+  OUT
+  HIGH
+}
+
+enum StockBlockMode {
+  NONE
+  OUT_OF_STOCK
+  LOW_STOCK
+}
+
+model Ingredient {
+  id         String @id @default(cuid())
+  businessId String
+
+  name String
+  unit IngredientUnit
+
+  stock    Decimal @default(0) @db.Decimal(14, 3)
+  // Stock considered "full". Percentage thresholds are measured against it.
+  parLevel Decimal @default(0) @db.Decimal(14, 3)
+
+  lowStockMode            LowStockMode @default(PERCENT)
+  // PERCENT: percentage of parLevel. ABSOLUTE: quantity in `unit`.
+  // null falls back to the business default (PERCENT) or 0 (ABSOLUTE).
+  lowStockValue           Decimal?     @db.Decimal(14, 3)
+  // Per-ingredient override of the business consumption alert percentage.
+  consumptionAlertPercent Decimal?     @db.Decimal(5, 2)
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipeItems RecipeItem[]
+  movements   StockMovement[]
+  alerts      StockAlert[]
+
+  @@unique([businessId, name])
+  @@index([businessId, archivedAt])
+}
+
+// One recipe line. Exactly one of productId / productOptionId / globalOptionId
+// is set (enforced by a CHECK constraint in the migration).
+model RecipeItem {
+  id           String  @id @default(cuid())
+  businessId   String
+  ingredientId String
+  quantity     Decimal @db.Decimal(14, 3)
+
+  productId       String?
+  productOptionId String?
+  globalOptionId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  ingredient    Ingredient     @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  product       Product?       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productOption ProductOption? @relation(fields: [productOptionId], references: [id], onDelete: Cascade)
+  globalOption  GlobalOption?  @relation(fields: [globalOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, ingredientId])
+  @@unique([productOptionId, ingredientId])
+  @@unique([globalOptionId, ingredientId])
+  @@index([businessId])
+  @@index([ingredientId])
+}
+
+// Append-only ledger. Stock is never edited directly: every change is a row here.
+model StockMovement {
+  id           String            @id @default(cuid())
+  businessId   String
+  ingredientId String
+  type         StockMovementType
+  // Signed change applied to the stock (negative for consumption and waste).
+  quantity     Decimal           @db.Decimal(14, 3)
+  stockAfter   Decimal           @db.Decimal(14, 3)
+  orderId      String?
+  userId       String?
+  note         String?
+  createdAt    DateTime          @default(now())
+
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // A given order can consume a given ingredient only once.
+  @@unique([orderId, ingredientId, type])
+  @@index([ingredientId, createdAt])
+  @@index([businessId, createdAt])
+}
+
+model StockAlert {
+  id           String          @id @default(cuid())
+  businessId   String
+  ingredientId String
+  kind         StockAlertKind
+  level        StockAlertLevel
+  stock        Decimal         @db.Decimal(14, 3)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  // Set automatically once the condition clears (restock or lower usage).
+  resolvedAt   DateTime?
+
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, resolvedAt])
+  @@index([ingredientId, kind, resolvedAt])
+}
+
+model InventorySettings {
+  id         String @id @default(cuid())
+  businessId String @unique
+
+  alertsEnabled           Boolean        @default(true)
+  defaultLowStockPercent  Decimal        @default(20) @db.Decimal(5, 2)
+  consumptionAlertPercent Decimal        @default(20) @db.Decimal(5, 2)
+  consumptionWindowHours  Int            @default(24)
+  // Applied to public (customer) orders only; staff can still register orders.
+  blockMode               StockBlockMode @default(NONE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
