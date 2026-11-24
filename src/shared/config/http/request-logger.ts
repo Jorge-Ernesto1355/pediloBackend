@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express';
+import { redactUrlTokens } from '../security/redact-url-tokens.js';
 
 const SENSITIVE_KEY =
   /password|token|secret|authorization|cookie|api[-_]?key|email|phone|address|customer|name/i;
@@ -40,7 +41,8 @@ function logRequest(
   const entry = {
     type: 'http',
     method: request.method,
-    path: request.originalUrl,
+    // Los links privados (tarjetas de lealtad, entregas) llevan su llave en la URL.
+    path: redactUrlTokens(request.originalUrl),
     route: request.route?.path ?? null,
     request: includePayloads
       ? {

@@ -12,6 +12,7 @@ import type {
 import type { DeliveryFailureReason } from '../../domain/deliveryStateMachine.js';
 import type { Coordinates } from '../../domain/distance.js';
 import { DeliveryInvalidTransitionError } from '../../domain/errors/DeliveryErrors.js';
+import { autoStampOrderInTx } from '@/modules/loyalty/infrastructure/persistence/loyaltyLedger.js';
 
 export const deliveryRecordSelect = {
   id: true,
@@ -402,6 +403,16 @@ export class PrismaDeliveryRepository implements DeliveryRepository {
       await tx.orderStatusHistory.create({
         data: { orderId: order.id, status: move.orderTo, createdAt: updatedAt },
       });
+      // Entregado = estado final del pedido a domicilio: sello automático de lealtad
+      // (solo en modo automático; con SAVEPOINT, nunca bloquea la entrega).
+      if (move.orderTo === 'DELIVERED') {
+        await autoStampOrderInTx(tx, {
+          businessId: order.businessId,
+          orderId: order.id,
+          createdByUserId: null,
+          now: updatedAt,
+        });
+      }
       return {
         orderId: order.id,
         businessId: order.businessId,

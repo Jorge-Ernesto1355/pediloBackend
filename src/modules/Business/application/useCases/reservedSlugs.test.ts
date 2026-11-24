@@ -31,6 +31,12 @@ describe('slugs reservados para las rutas del repartidor', () => {
     expect(isReservedBusinessSlug('tacos-e')).toBe(false);
   });
 
+  it('reserva "tarjeta" para el link de la tarjeta de lealtad', () => {
+    expect(isReservedBusinessSlug('tarjeta')).toBe(true);
+    expect(isReservedBusinessSlug(' Tarjeta ')).toBe(true);
+    expect(isReservedBusinessSlug('tarjetas-y-mas')).toBe(false);
+  });
+
   it('crear un negocio con slug "entrega" responde como slug ocupado', async () => {
     const repo = repository();
     await expect(

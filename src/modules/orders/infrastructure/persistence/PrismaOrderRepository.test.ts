@@ -176,6 +176,8 @@ describe('PrismaOrderRepository customer identity', () => {
         create: vi.fn().mockResolvedValue({ id: row.id, createdAt: row.createdAt }),
       },
       customer: {
+        // El cliente ya existía (no recibe llave de tarjeta de lealtad).
+        findUnique: vi.fn().mockResolvedValue({ id: 'customer-1' }),
         upsert: vi.fn().mockResolvedValue({
           id: 'customer-1',
           businessId: 'business-1',

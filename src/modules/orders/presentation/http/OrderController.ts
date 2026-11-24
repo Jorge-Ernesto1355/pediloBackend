@@ -67,6 +67,7 @@ export class OrderController {
           items: body.data.items,
           fulfillmentType: body.data.fulfillmentType,
           notes: body.data.notes,
+          loyaltyRewardId: body.data.loyaltyRewardId,
         },
         idempotencyKey,
       )

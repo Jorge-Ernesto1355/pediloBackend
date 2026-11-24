@@ -61,6 +61,32 @@ export interface OrderProps {
   transferConfirmedAt?: Date | null;
   /** Estado de la entrega con repartidor (null si todavía no se buscó repartidor). */
   dispatch?: OrderDispatch | null;
+  /** Descuento del premio de lealtad canjeado (va aparte de discountAmount). */
+  loyaltyDiscountAmount?: number;
+  /** Premio de lealtad aplicado a este pedido (copia histórica, aunque se cancele). */
+  loyaltyReward?: OrderLoyaltyReward | null;
+  /** Sello vigente que dio este pedido (null si todavía no se sella). */
+  loyaltyStamp?: OrderLoyaltyStamp | null;
+  /**
+   * Solo en la respuesta de creación de un pedido público que creó un cliente NUEVO:
+   * la llave de su tarjeta para guardarla en el navegador. Nunca para clientes existentes.
+   */
+  loyaltyCardToken?: string;
+}
+
+export interface OrderLoyaltyReward {
+  id: string;
+  type: 'PERCENT' | 'FIXED' | 'FREE_PRODUCT';
+  label: string;
+  /** true si el premio sigue canjeado en este pedido (false si se devolvió al cancelar). */
+  active: boolean;
+}
+
+export interface OrderLoyaltyStamp {
+  id: string;
+  position: number;
+  source: 'ORDER_MANUAL' | 'ORDER_AUTO' | 'WALK_IN';
+  createdAt: Date;
 }
 
 export interface OrderDispatch {

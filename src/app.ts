@@ -40,6 +40,10 @@ import {
   publicDeliveryDispatchRouter,
 } from './modules/delivery/presentation/http/delivery-dispatch.routes.js';
 import {
+  loyaltyRouter,
+  publicLoyaltyRouter,
+} from './modules/loyalty/presentation/http/loyalty.routes.js';
+import {
   googleReviewRouter,
   googleReviewTrackingRouter,
 } from './modules/GoogleReviews/presentation/http/google-review.routes.js';
@@ -81,6 +85,7 @@ export function createApp() {
   app.use('/api/v1/businesses', businessSettingsRouter);
   app.use('/api/v1/businesses', deliverySettingsRouter);
   app.use('/api/v1/businesses', deliveryDispatchRouter);
+  app.use('/api/v1/businesses', loyaltyRouter);
   app.use('/api/v1/businesses', paymentCardRouter);
   app.use('/api/v1/businesses', storeVisitRouter);
   app.use('/api/v1/businesses', googleReviewRouter);
@@ -103,6 +108,7 @@ export function createApp() {
   app.use('/api/orders', orderEventsRouter);
   app.use('/api/v1/public', publicDeliveryRouter);
   app.use('/api/v1/public', publicDeliveryDispatchRouter);
+  app.use('/api/v1/public', publicLoyaltyRouter);
   app.use('/api/v1/public', publicBusinessRouter);
   app.use('/api/v1/dashboard', salesRouter);
   app.use('/api/v1/analytics', analyticsRouter);

@@ -25,6 +25,9 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   orderModifications      OrderModification[]
+  loyaltyStampsCreated    LoyaltyStamp[]           @relation("LoyaltyStampCreatedBy")
+  loyaltyStampsVoided     LoyaltyStamp[]           @relation("LoyaltyStampVoidedBy")
+  loyaltyRewardsRedeemed  LoyaltyReward[]          @relation("LoyaltyRewardRedeemedBy")
 
   businessId String?   @unique
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -145,13 +148,13 @@ model Business {
   users                 User[]
   images                BusinessImage[]
 
-  businessSchedule  BusinessSchedule?
-  ubicationMaps     UbicationMaps?
-  googleReviewLink  GoogleReviewLink?
-  googleReviewScans GoogleReviewScan[]
-  storeVisits       StoreVisit[]
-  paymentCard       RestaurantPaymentCard?
-  slugHistory       BusinessSlugHistory[]
+  businessSchedule   BusinessSchedule?
+  ubicationMaps      UbicationMaps?
+  googleReviewLink   GoogleReviewLink?
+  googleReviewScans  GoogleReviewScan[]
+  storeVisits        StoreVisit[]
+  paymentCard        RestaurantPaymentCard?
+  slugHistory        BusinessSlugHistory[]
   globalOptionGroups GlobalOptionGroup[]
   ingredients        Ingredient[]
   recipeItems        RecipeItem[]
@@ -159,6 +162,10 @@ model Business {
   stockAlerts        StockAlert[]
   inventorySettings  InventorySettings?
   deliveries         Delivery[]
+  loyaltyProgram     LoyaltyProgram?
+  loyaltyCards       LoyaltyCard[]
+  loyaltyStamps      LoyaltyStamp[]
+  loyaltyRewards     LoyaltyReward[]
 }
 
 model BusinessSlugHistory {
@@ -340,15 +347,17 @@ model Product {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
-  images            ProductImage[]
-  optionGroups      ProductOptionGroup[]
+  images             ProductImage[]
+  optionGroups       ProductOptionGroup[]
   globalOptionGroups ProductGlobalOptionGroup[]
-  comboOptionGroups ComboOptionGroup[]     @relation("ComboParentProduct")
-  comboOptions      ComboOptionProduct[]   @relation("ComboChoiceProduct")
-  includedInCombos  ComboIncludedProduct[] @relation("ComboIncludedItem")
-  comboIncludes     ComboIncludedProduct[] @relation("ComboRequiredItems")
-  orderItems        OrderItem[]
-  discountProducts  DiscountProduct[]
+  comboOptionGroups  ComboOptionGroup[]         @relation("ComboParentProduct")
+  comboOptions       ComboOptionProduct[]       @relation("ComboChoiceProduct")
+  includedInCombos   ComboIncludedProduct[]     @relation("ComboIncludedItem")
+  comboIncludes      ComboIncludedProduct[]     @relation("ComboRequiredItems")
+  orderItems         OrderItem[]
+  discountProducts   DiscountProduct[]
+  loyaltyPrograms    LoyaltyProgram[]           @relation("LoyaltyProgramRewardProduct")
+  loyaltyRewards     LoyaltyReward[]            @relation("LoyaltyRewardProduct")
   recipeItems        RecipeItem[]
 
   @@index([businessId, isAvailable, createdAt])
@@ -402,20 +411,20 @@ model ProductOption {
 }
 
 model GlobalOptionGroup {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   businessId    String
   name          String
-  isRequired    Boolean  @default(false)
-  minSelections Int      @default(0) @map("minSelect")
-  maxSelections Int      @default(1) @map("maxSelect")
-  sortOrder     Int      @default(0)
-  isActive      Boolean  @default(true)
+  isRequired    Boolean   @default(false)
+  minSelections Int       @default(0) @map("minSelect")
+  maxSelections Int       @default(1) @map("maxSelect")
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
   archivedAt    DateTime?
-  version       Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  business Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
   options  GlobalOption[]
   products ProductGlobalOptionGroup[]
 
@@ -434,7 +443,7 @@ model GlobalOption {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  group GlobalOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group       GlobalOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   recipeItems RecipeItem[]
 
   @@index([groupId, sortOrder])
@@ -443,9 +452,9 @@ model GlobalOption {
 model ProductGlobalOptionGroup {
   productId String
   groupId   String
-  sortOrder Int @default(0)
+  sortOrder Int    @default(0)
 
-  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   group   GlobalOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([productId, groupId])
@@ -514,9 +523,10 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  business  Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  orders    Order[]
-  discounts CustomerDiscount[]
+  business     Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  discounts    CustomerDiscount[]
+  loyaltyCards LoyaltyCard[]
 
   @@unique([businessId, phone])
 }
@@ -554,6 +564,12 @@ model Order {
   deliveryFee          Decimal   @default(0) @db.Decimal(10, 2)
   transferConfirmedAt  DateTime?
 
+  // Premio de lealtad canjeado en este pedido (copia histórica: se conserva aunque el
+  // pedido se cancele y el premio vuelva a estar disponible) y cuánto descontó.
+  // total = subtotal - discountAmount - loyaltyDiscountAmount.
+  loyaltyRewardId       String?
+  loyaltyDiscountAmount Decimal @default(0) @db.Decimal(10, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -566,12 +582,16 @@ model Order {
   discountUsed     CustomerDiscount?    @relation("DiscountUsedInOrder")
   modifications    OrderModification[]
   delivery         Delivery?
+  loyaltyReward    LoyaltyReward?       @relation("OrderLoyaltyReward", fields: [loyaltyRewardId], references: [id], onDelete: SetNull)
+  redeemedReward   LoyaltyReward?       @relation("LoyaltyRewardRedeemedOrder")
+  loyaltyStamps    LoyaltyStamp[]
 
   @@unique([businessId, orderNumber])
   @@unique([businessId, idempotencyKey])
   @@index([businessId, source, createdAt])
   @@index([businessId, createdAt])
   @@index([businessId, status, createdAt])
+  @@index([loyaltyRewardId])
 }
 
 model OrderModification {
@@ -1022,4 +1042,156 @@ model InventorySettings {
   updatedAt DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ─── Tarjeta de lealtad por sellos ────────────────────────────────────────────
+// Reversión: prisma/migrations/20261122200000_add_loyalty_program/down.sql.
+// Índices y restricciones que Prisma no sabe expresar (viven solo en la migración):
+//   - loyalty_stamps_active_order_key: UNIQUE parcial ("orderId") WHERE "orderId" IS NOT NULL
+//     AND "voidedAt" IS NULL → un pedido sella una sola vez.
+//   - CHECKs de rangos (sellos 3–20, conteos >= 0, montos >= 0, porcentaje <= 100, etc.).
+
+enum LoyaltyStampMode {
+  MANUAL
+  AUTO
+}
+
+enum LoyaltyRewardType {
+  PERCENT
+  FIXED
+  FREE_PRODUCT
+}
+
+enum LoyaltyStampSource {
+  ORDER_MANUAL
+  ORDER_AUTO
+  WALK_IN
+}
+
+enum LoyaltyRewardStatus {
+  AVAILABLE
+  REDEEMED
+  EXPIRED
+  VOID
+}
+
+// Un programa por restaurante. `design` es JSON con lista cerrada de valores (versión
+// `designVersion`), validado en el dominio; nunca CSS libre.
+model LoyaltyProgram {
+  id                String            @id @default(cuid())
+  businessId        String            @unique
+  enabled           Boolean           @default(true)
+  stampsRequired    Int               @default(8)
+  stampMode         LoyaltyStampMode  @default(MANUAL)
+  minOrderAmount    Decimal           @default(0) @db.Decimal(10, 2)
+  rewardType        LoyaltyRewardType @default(PERCENT)
+  rewardValue       Decimal           @default(20) @db.Decimal(10, 2)
+  rewardProductId   String?
+  rewardLabel       String            @db.VarChar(40)
+  rewardExpiresDays Int?
+  /// Tope antiabuso de sellos en el local (walk_in) por cliente y por día.
+  walkInDailyLimit  Int               @default(5)
+  design            Json
+  designVersion     Int               @default(1)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  rewardProduct Product? @relation("LoyaltyProgramRewardProduct", fields: [rewardProductId], references: [id], onDelete: SetNull)
+
+  @@index([rewardProductId])
+  @@map("loyalty_programs")
+}
+
+// Tarjeta de un cliente en un restaurante. Se crea de forma perezosa.
+// `publicToken` es la llave del link privado del cliente (32 bytes aleatorios, base64url).
+// `stampsCount` es derivado (avance del ciclo actual): solo cambia en la misma transacción
+// que inserta o anula un sello, con la fila bloqueada (SELECT ... FOR UPDATE).
+model LoyaltyCard {
+  id              String   @id @default(cuid())
+  businessId      String
+  customerId      String
+  publicToken     String   @unique @db.VarChar(64)
+  stampsCount     Int      @default(0)
+  cyclesCompleted Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  stamps   LoyaltyStamp[]
+  rewards  LoyaltyReward[]
+
+  @@unique([businessId, customerId])
+  @@index([customerId])
+  @@index([businessId, stampsCount])
+  @@map("loyalty_cards")
+}
+
+// Un sello nunca se borra: se anula (voidedAt + voidedReason + voidedByUserId).
+// `cycle` = ciclo de la tarjeta al sellar (cyclesCompleted en ese momento);
+// `position` = número de sello dentro de ese ciclo (1..stampsRequired).
+model LoyaltyStamp {
+  id              String             @id @default(cuid())
+  cardId          String
+  businessId      String
+  orderId         String?
+  source          LoyaltyStampSource
+  note            String?            @db.VarChar(140)
+  createdByUserId String?
+  cycle           Int
+  position        Int
+  createdAt       DateTime           @default(now())
+  voidedAt        DateTime?
+  voidedReason    String?            @db.VarChar(140)
+  voidedByUserId  String?
+
+  card      LoyaltyCard    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  business  Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order     Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdBy User?          @relation("LoyaltyStampCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  voidedBy  User?          @relation("LoyaltyStampVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
+  reward    LoyaltyReward? @relation("LoyaltyRewardSourceStamp")
+
+  @@index([cardId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([orderId])
+  @@map("loyalty_stamps")
+}
+
+// Premio ganado al completar la tarjeta. Guarda una COPIA del premio del programa al
+// generarse: cambiar el programa después no altera premios ya ganados.
+// AVAILABLE con expiresAt vencido se trata como EXPIRED al leerlo (sin procesos aparte).
+model LoyaltyReward {
+  id                String              @id @default(cuid())
+  cardId            String
+  businessId        String
+  status            LoyaltyRewardStatus @default(AVAILABLE)
+  rewardType        LoyaltyRewardType
+  rewardValue       Decimal             @db.Decimal(10, 2)
+  rewardProductId   String?
+  rewardProductName String?             @db.VarChar(120)
+  rewardLabel       String              @db.VarChar(40)
+  cycle             Int
+  sourceStampId     String?             @unique
+  expiresAt         DateTime?
+  redeemedAt        DateTime?
+  redeemedOrderId   String?             @unique
+  redeemedByUserId  String?
+  voidedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  card          LoyaltyCard   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  rewardProduct Product?      @relation("LoyaltyRewardProduct", fields: [rewardProductId], references: [id], onDelete: SetNull)
+  sourceStamp   LoyaltyStamp? @relation("LoyaltyRewardSourceStamp", fields: [sourceStampId], references: [id], onDelete: SetNull)
+  redeemedOrder Order?        @relation("LoyaltyRewardRedeemedOrder", fields: [redeemedOrderId], references: [id], onDelete: SetNull)
+  redeemedBy    User?         @relation("LoyaltyRewardRedeemedBy", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  ordersApplied Order[]       @relation("OrderLoyaltyReward")
+
+  @@index([cardId, status])
+  @@index([businessId, status])
+  @@index([rewardProductId])
+  @@map("loyalty_rewards")
 }
