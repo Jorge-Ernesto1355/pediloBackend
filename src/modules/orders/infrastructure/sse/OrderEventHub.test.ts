@@ -124,4 +124,37 @@ describe('OrderEventHub', () => {
       'function',
     );
   });
+
+  it('delivers stock alerts only to the restaurant that owns the ingredient', () => {
+    const restaurantA = new FakeResponse();
+    const restaurantB = new FakeResponse();
+    hub.add('restaurant-a', 'owner-a', restaurantA as unknown as Response);
+    hub.add('restaurant-b', 'owner-b', restaurantB as unknown as Response);
+
+    const delivered = hub.publishStockAlert({
+      alertId: 'alert-1',
+      businessId: 'restaurant-a',
+      ingredientId: 'ingredient-1',
+      ingredientName: 'Queso',
+      unit: 'G',
+      kind: 'STOCK',
+      level: 'LOW',
+      stock: 80,
+      threshold: 100,
+      createdAt: new Date('2026-11-19T18:00:00.000Z'),
+    });
+
+    expect(delivered).toBe(1);
+    expect(restaurantB.frames).toHaveLength(0);
+    const [frame] = restaurantA.frames;
+    expect(frame).toMatch(/^id: [\w-]+\nevent: stock_alert\ndata: /);
+    expect(JSON.parse(frame!.split('data: ')[1]!)).toMatchObject({
+      type: 'stock_alert',
+      restaurantId: 'restaurant-a',
+      ingredientName: 'Queso',
+      level: 'LOW',
+      stock: 80,
+      createdAt: '2026-11-19T18:00:00.000Z',
+    });
+  });
 });

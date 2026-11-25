@@ -22,6 +22,21 @@ export type NewOrderEvent = {
     source: OrderSource;
 };
 
+export type StockAlertEvent = {
+  eventId: string;
+  type: 'stock_alert';
+  alertId: string;
+  restaurantId: string;
+  ingredientId: string;
+  ingredientName: string;
+  unit: 'G' | 'ML' | 'UNIT';
+  kind: 'STOCK' | 'CONSUMPTION';
+  level: 'LOW' | 'CRITICAL' | 'OUT' | 'HIGH';
+  stock: number;
+  threshold: number;
+  createdAt: string;
+};
+
 /** Cambió la entrega a domicilio de un pedido (oferta, tomada, liberada, entregada…). */
 export type DeliveryUpdatedEvent = {
   eventId: string;
@@ -206,6 +221,44 @@ export class OrderEventHub {
       statusRevision: input.statusRevision,
     };
     const frame = `id: ${event.eventId}\nevent: order_status_updated\ndata: ${JSON.stringify(event)}\n\n`;
+    let delivered = 0;
+    for (const connection of connections.values()) {
+      if (!this.write(connection, frame)) this.drop(connection);
+      else delivered += 1;
+    }
+    return delivered;
+  }
+
+  /** Delivers an inventory alert to every open dashboard of the business. */
+  publishStockAlert(input: {
+    alertId: string;
+    businessId: string;
+    ingredientId: string;
+    ingredientName: string;
+    unit: StockAlertEvent['unit'];
+    kind: StockAlertEvent['kind'];
+    level: StockAlertEvent['level'];
+    stock: number;
+    threshold: number;
+    createdAt: Date | string;
+  }): number {
+    const connections = this.connectionsByRestaurant.get(input.businessId);
+    if (!connections?.size) return 0;
+    const event: StockAlertEvent = {
+      eventId: randomUUID(),
+      type: 'stock_alert',
+      alertId: input.alertId,
+      restaurantId: input.businessId,
+      ingredientId: input.ingredientId,
+      ingredientName: input.ingredientName,
+      unit: input.unit,
+      kind: input.kind,
+      level: input.level,
+      stock: input.stock,
+      threshold: input.threshold,
+      createdAt: new Date(input.createdAt).toISOString(),
+    };
+    const frame = `id: ${event.eventId}\nevent: stock_alert\ndata: ${JSON.stringify(event)}\n\n`;
     let delivered = 0;
     for (const connection of connections.values()) {
       if (!this.write(connection, frame)) this.drop(connection);

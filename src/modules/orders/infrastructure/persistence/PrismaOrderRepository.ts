@@ -36,6 +36,12 @@ import { CustomerDiscountApplicationFailedError } from '@/modules/CustomerDiscou
 import { CustomerDisabledError } from '@/modules/Customer/domain/errors/CustomerErrors.js';
 import { resolveComboSelections } from '../../domain/comboSelection.js';
 import { bestDiscountFor, priceWithDiscount } from '@/modules/Discount/domain/pricing.js';
+import {
+  assertStockAvailable,
+  consumeStockForOrder,
+} from '@/modules/inventory/infrastructure/persistence/stockLedger.js';
+import type { StockAlertNotice } from '@/modules/inventory/domain/stock.js';
+import { publishStockAlerts } from '@/modules/inventory/infrastructure/stockAlertPublisher.js';
 import { confirmDeliveryQuote } from '@/modules/delivery/domain/deliverySettings.js';
 import { DeliveryDestinationInvalidError } from '@/modules/delivery/domain/errors/DeliveryErrors.js';
 import { loadDeliverySettings } from '@/modules/delivery/infrastructure/persistence/PrismaDeliverySettingsRepository.js';
@@ -206,7 +212,7 @@ export class PrismaOrderRepository implements OrderRepository {
             discountAmount: number;
             discountId: string | null;
             discountLabel: string | null;
-            options: { name: string; groupName: string | null; price: number }[];
+            options: OrderItemOptionInput[];
           }[] = [];
           for (const requested of input.items) {
             const product = productMap.get(requested.productId);
@@ -289,6 +295,7 @@ export class PrismaOrderRepository implements OrderRepository {
             const unitPriceFinal = discount
               ? priceWithDiscount(unitPriceOriginal, discount)
               : unitPriceOriginal;
+            const globalOptionIds = globalOptionIdsOf(product);
             const groupNameByOptionId = new Map(
               activeGroups.flatMap((group) =>
                 group.options.map((option) => [option.id, group.name] as const),
@@ -320,11 +327,22 @@ export class PrismaOrderRepository implements OrderRepository {
                   name: option.name,
                   groupName: groupNameByOptionId.get(option.id) ?? null,
                   price: option.price.toNumber(),
+                  ...optionSource(globalOptionIds, option.id),
                 })),
                 ...(comboSelections ?? []),
               ],
             });
           }
+          if (source === 'PUBLIC')
+            await assertStockAvailable(
+              tx,
+              businessId,
+              items.map((item) => ({
+                productId: item.productId,
+                quantity: item.quantity,
+                options: item.options,
+              })),
+            );
           const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
           if (source === 'PUBLIC' && !input.acceptPriceChange) {
             const expectedItems = input.items.flatMap((requested) => {
@@ -787,7 +805,7 @@ export class PrismaOrderRepository implements OrderRepository {
           discountLabel: string | null;
           quantity: number;
           subtotal: number;
-          options: Array<{ name: string; groupName: string | null; price: number }>;
+          options: OrderItemOptionInput[];
         }> = [];
 
         for (const requested of input.items) {
@@ -893,6 +911,7 @@ export class PrismaOrderRepository implements OrderRepository {
           const unitPriceFinal = discount
             ? priceWithDiscount(unitPriceOriginal, discount)
             : unitPriceOriginal;
+          const globalOptionIds = globalOptionIdsOf(product);
           const groupNameByOptionId = new Map(
             activeGroups.flatMap((group) =>
               group.options.map((option) => [option.id, group.name] as const),
@@ -924,6 +943,8 @@ export class PrismaOrderRepository implements OrderRepository {
                   name: option.name,
                   groupName: option.groupName,
                   price: option.price.toNumber(),
+                  productOptionId: option.productOptionId,
+                  globalOptionId: option.globalOptionId,
                 }))
               : [
                   ...includedComboProducts,
@@ -931,6 +952,7 @@ export class PrismaOrderRepository implements OrderRepository {
                     name: option.name,
                     groupName: groupNameByOptionId.get(option.id) ?? null,
                     price: option.price.toNumber(),
+                    ...optionSource(globalOptionIds, option.id),
                   })),
                   ...(comboSelections ?? []),
                 ],
@@ -1092,6 +1114,7 @@ export class PrismaOrderRepository implements OrderRepository {
     timings: OrderStatusTimings = {},
   ) {
     const transactionStartedAt = performance.now();
+    let stockNotices: StockAlertNotice[] = [];
     let cancelledDeliveryOrderId: string | null = null;
     const update = await this.prisma.$transaction(async (tx) => {
       const lookupStartedAt = performance.now();
@@ -1170,6 +1193,9 @@ export class PrismaOrderRepository implements OrderRepository {
         data: { orderId, status: databaseStatus, createdAt: updatedAt },
       });
       timings.historyMs = performance.now() - historyStartedAt;
+      // Ingredients are deducted when the order is READY, in the same transaction
+      // as the status change so both succeed or fail together.
+      if (status === 'READY') stockNotices = await consumeStockForOrder(tx, orderId);
 
       // Tarjeta de lealtad, en la MISMA transacción:
       // - Cancelar devuelve el premio canjeado y anula un sello vigente.
@@ -1208,6 +1234,7 @@ export class PrismaOrderRepository implements OrderRepository {
       };
     });
     timings.transactionMs = performance.now() - transactionStartedAt;
+    publishStockAlerts(stockNotices);
 
     if (update) {
       const queueStartedAt = performance.now();
@@ -1256,6 +1283,31 @@ export class PrismaOrderRepository implements OrderRepository {
     }
     return update;
   }
+}
+
+type OrderItemOptionInput = {
+  name: string;
+  groupName: string | null;
+  price: number;
+  /** Catalog option the customer picked; inventory uses it to find the option's recipe. */
+  productOptionId?: string | null;
+  globalOptionId?: string | null;
+};
+
+function globalOptionIdsOf(product: {
+  globalOptionGroups?: { group: { options: { id: string }[] } }[];
+}) {
+  return new Set(
+    (product.globalOptionGroups ?? []).flatMap((link) =>
+      link.group.options.map((option) => option.id),
+    ),
+  );
+}
+
+function optionSource(globalOptionIds: Set<string>, optionId: string) {
+  return globalOptionIds.has(optionId)
+    ? { globalOptionId: optionId }
+    : { productOptionId: optionId };
 }
 
 /** Resumen de lealtad para la respuesta de "Listo" (aviso del sello en la comanda). */

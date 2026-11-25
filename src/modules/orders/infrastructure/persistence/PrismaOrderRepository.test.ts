@@ -61,6 +61,7 @@ describe('PrismaOrderRepository customer identity', () => {
     const sequence: string[] = [];
     const tx = {
       business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
+      inventorySettings: { findUnique: vi.fn().mockResolvedValue(null) },
       product: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -126,7 +127,12 @@ describe('PrismaOrderRepository customer identity', () => {
                       groupName: 'Productos incluidos',
                       price: 0,
                     },
-                    { name: 'Queso', groupName: 'Extras', price: 5 },
+                    {
+                      name: 'Queso',
+                      groupName: 'Extras',
+                      price: 5,
+                      productOptionId: 'option-1',
+                    },
                   ],
                 },
               }),
@@ -152,6 +158,7 @@ describe('PrismaOrderRepository customer identity', () => {
     };
     const tx = {
       business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
+      inventorySettings: { findUnique: vi.fn().mockResolvedValue(null) },
       product: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -238,6 +245,7 @@ describe('PrismaOrderRepository customer identity', () => {
     };
     const tx = {
       business: { findUnique: vi.fn().mockResolvedValue({ id: 'business-1' }) },
+      inventorySettings: { findUnique: vi.fn().mockResolvedValue(null) },
       product: {
         findMany: vi.fn().mockResolvedValue([
           {

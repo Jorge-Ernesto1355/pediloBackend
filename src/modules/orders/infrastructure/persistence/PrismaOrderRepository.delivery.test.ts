@@ -4,6 +4,12 @@ import { PrismaOrderRepository } from './PrismaOrderRepository.js';
 import { orderEventHub } from '@/modules/orders/infrastructure/sse/OrderEventHub.js';
 import type { CreateOrderDTO } from '../../application/dto/OrderDTO.js';
 
+// Inventory has its own tests; here the stock ledger must not touch the mocked transaction.
+vi.mock('@/modules/inventory/infrastructure/persistence/stockLedger.js', () => ({
+  assertStockAvailable: vi.fn().mockResolvedValue(undefined),
+  consumeStockForOrder: vi.fn().mockResolvedValue([]),
+}));
+
 // Valores solo de prueba: Pedilo no trae tarifas precargadas.
 const origin = { latitude: 23.2494, longitude: -106.4111 };
 const EARTH_RADIUS_KM = 6371.0088;

@@ -21,6 +21,7 @@ import { customerDiscountRouter } from './modules/CustomerDiscount/presentation/
 import { discountRouter } from './modules/Discount/presentation/http/discount.routes.js';
 import { orderRouter, publicOrderRouter } from './modules/orders/presentation/http/order.routes.js';
 import { paymentCardRouter } from './modules/Business/presentation/http/payment-card.routes.js';
+import { inventoryRouter } from './modules/inventory/presentation/http/inventory.routes.js';
 import { orderEventsRouter } from './modules/orders/presentation/http/order-events.routes.js';
 import { requestLogger, requestLoggerErrorHandler } from './shared/config/http/request-logger.js';
 import { salesRouter } from './modules/dashboard/presentation/http/sales.routes.js';
@@ -103,6 +104,7 @@ export function createApp() {
   app.use('/api/v1/businesses', customerDiscountRouter);
   app.use('/api/v1/businesses', discountRouter);
   app.use('/api/v1/businesses', orderRouter);
+  app.use('/api/v1/businesses', inventoryRouter);
   app.use('/api/orders', orderEventsRouter);
   app.use('/api/v1/public', publicDeliveryRouter);
   app.use('/api/v1/public', publicDeliveryDispatchRouter);
