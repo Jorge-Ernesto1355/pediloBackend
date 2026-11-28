@@ -37,6 +37,8 @@ export const createOrderSchema = z
     customer: z.object({ name: z.string().trim().min(1).max(20), phone: phoneSchema }).strict(),
     items: z.array(itemSchema).min(1).max(100),
     fulfillmentType: z.enum(['DINE_IN', 'PICKUP', 'DELIVERY']).optional(),
+    // Notas del cliente del checkout público (el front limita a 200 caracteres).
+    notes: z.string().trim().max(200).nullable().optional(),
     paymentMethod: z.enum(['CASH', 'TRANSFER']).optional(),
     payment_method: z.enum(['cash', 'transfer']).optional(),
     ignoreCustomerDiscount: z.boolean().optional(),
