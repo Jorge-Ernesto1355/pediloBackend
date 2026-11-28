@@ -30,6 +30,16 @@ describe('order creation schemas', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('accepts customer notes in a public order and limits them to 200 characters', () => {
+    const base = {
+      customer: { name: 'Juan', phone: '6681234567' },
+      items: [{ productId: 'p1', quantity: 1 }],
+    };
+    expect(createOrderSchema.parse({ ...base, notes: '  Sin cebolla  ' }).notes).toBe('Sin cebolla');
+    expect(createOrderSchema.safeParse({ ...base, notes: null }).success).toBe(true);
+    expect(createOrderSchema.safeParse({ ...base, notes: 'x'.repeat(201) }).success).toBe(false);
+  });
+
   it('keeps public phone required', () => {
     expect(
       createOrderSchema.safeParse({
